@@ -28,6 +28,28 @@ document
 
       const listItem = document.createElement("li");
       listItem.textContent = fileName;
+
+      // Create add and remove buttons
+      const addButton = document.createElement("button");
+      addButton.textContent = "Add";
+      addButton.addEventListener("click", function () {
+        // Event to add model to the scene
+        console.log(`Add model: ${fileName}`);
+        // Add your model loading logic here
+      });
+
+      const removeButton = document.createElement("button");
+      removeButton.textContent = "Remove";
+      removeButton.addEventListener("click", function () {
+        // Remove item from list and local storage
+        objectList.removeChild(listItem);
+        localStorage.removeItem(fileName);
+        delete existingNames[fileName];
+        localStorage.setItem("fileNames", JSON.stringify(existingNames));
+      });
+
+      listItem.appendChild(addButton);
+      listItem.appendChild(removeButton);
       objectList.appendChild(listItem);
 
       // Save file to local storage
@@ -40,6 +62,14 @@ document
 
     localStorage.setItem("fileNames", JSON.stringify(existingNames));
   });
+
+const clearButton = document.getElementById("clear");
+clearButton.textContent = "Clear";
+clearButton.addEventListener("click", function () {
+  localStorage.clear();
+  objectList.innerHTML = "";
+  console.log("Local storage cleared and list reset.");
+});
 
 // Load files from local storage on page load
 window.addEventListener("load", function () {
