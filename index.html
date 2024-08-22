@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>three.js webgl - interactive - voxel painter</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <link type="text/css" rel="stylesheet" href="main.css" />
+    <style>
+      body {
+        background-color: #f0f0f0;
+        color: #444;
+      }
+      a {
+        color: #08f;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../build/three.module.js",
+          "three/addons/": "./jsm/"
+        }
+      }
+    </script>
+    <input type="file" id="fileInput" accept=".stp,.step" />
+    <ul id="objectList"></ul>
+    <script type="module" src="index2.js"></script>
+  </body>
+</html>
