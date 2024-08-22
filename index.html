@@ -25,7 +25,7 @@
         overflow-y: auto;
       }
       section#main {
-        width: 80%;
+        flex-grow: 1; /* Changed width to flex-grow for better responsiveness */
         display: flex;
         justify-content: center;
         align-items: center;
@@ -39,20 +39,13 @@
     </style>
   </head>
   <body>
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "../build/three.module.js",
-          "three/addons/": "./jsm/"
-        }
-      }
-    </script>
     <section id="sidebar">
       <input type="file" id="fileInput" accept=".stp,.step" />
       <button id="clear"></button>
       <ul id="objectList"></ul>
     </section>
     <section id="main">
+      <div id="gizmo"></div>
       <canvas id="canvas"></canvas>
     </section>
     <script type="module" src="index.js"></script>

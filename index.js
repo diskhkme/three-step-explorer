@@ -1,11 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import GUI from "lil-gui";
-
-/**
- * Debug
- */
-const gui = new GUI();
 
 // local storage
 // TODO: 중복된 이름이 파일 목록에 이미 존재하면 (1), (2), ... 과 같이 파일 이름에 번호를 추가하여 목록에 추가
@@ -94,8 +90,19 @@ const camera = new THREE.PerspectiveCamera(
 );
 camera.position.set(500, 1500, 500);
 camera.lookAt(0, 0, 0);
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  alpha: true,
+});
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.autoClear = false;
 renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+
+/**
+ * Debug
+ */
+const gui = new GUI();
 
 // Add OrbitControls
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -105,16 +112,52 @@ controls.screenSpacePanning = false;
 controls.maxPolarAngle = Math.PI / 2;
 
 // Add a grid plane
-const gridHelper = new THREE.GridHelper(2000, 20);
+const gridHelper = new THREE.GridHelper(2000, 20, 0x333333, 0x222222);
 scene.add(gridHelper);
 
 // Add a axis helper
 const axesHelper = new THREE.AxesHelper(1000);
 scene.add(axesHelper);
 
+// clock
+const clock = new THREE.Clock();
+
+/**
+ * Gizmo
+ */
+// helper
+const clientRect = canvas.getClientRects()[0];
+const helper = new ViewHelper(camera, renderer.domElement);
+helper.controls = controls;
+helper.controls.center = controls.target;
+
+const helperSize = 128;
+const gizmo = document.getElementById("gizmo");
+gizmo.style.position = "absolute";
+gizmo.style.height = `${helperSize}px`;
+gizmo.style.width = `${helperSize}px`;
+gizmo.style.top = `${clientRect.bottom - helperSize}px`;
+gizmo.style.left = `${clientRect.right - helperSize}px`;
+gizmo.style.right = `${clientRect.right}px`;
+gizmo.style.bottom = `${clientRect.bottom}px`;
+gizmo.style.backgroundColor = "gray";
+gizmo.style.opacity = "0.2";
+gizmo.style.borderRadius = "50%";
+
+helper.setLabels("X", "Y", "Z");
+document.body.appendChild(gizmo);
+console.log(helper);
+gizmo.addEventListener("pointerup", (event) => {
+  helper.handleClick(event);
+});
+
 function animate() {
   requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  if (helper.animating) helper.update(delta);
+  renderer.clear();
   renderer.render(scene, camera);
+  helper.render(renderer);
 }
 
 animate();
