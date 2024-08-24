@@ -4,8 +4,10 @@
   },
   "dependencies": {
     "lil-gui": "^0.19.2",
+    "occt-import-js": "^0.0.22",
     "three": "^0.167.1",
-    "three-viewport-gizmo": "^0.1.5"
+    "three-viewport-gizmo": "^0.1.5",
+    "vite-plugin-wasm": "^3.3.0"
   },
   "name": "three-step-explorer",
   "version": "1.0.0",
