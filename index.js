@@ -6,7 +6,6 @@ import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import GUI from "lil-gui";
 
 let camera, scene, renderer;
-let test_model;
 
 const clearButton = document.getElementById("clear");
 clearButton.textContent = "Clear";
@@ -114,6 +113,8 @@ animate();
 
 // local storage
 // TODO: 중복된 이름이 파일 목록에 이미 존재하면 (1), (2), ... 과 같이 파일 이름에 번호를 추가하여 목록에 추가
+const occt = await occtimportjs();
+
 document
   .getElementById("fileInput")
   .addEventListener("change", function (event) {
@@ -138,9 +139,45 @@ document
       const addButton = document.createElement("button");
       addButton.textContent = "Add";
       addButton.addEventListener("click", function () {
-        occtimportjs().then(async function (occt) {
-          console.log(occt);
-        });
+        const resultString = localStorage.getItem(fileName);
+        const result = JSON.parse(resultString);
+        console.log(result.meshes);
+        for (let resultMesh of result.meshes) {
+          let geometry = new THREE.BufferGeometry();
+
+          geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(
+              resultMesh.attributes.position.array,
+              3
+            )
+          );
+          if (resultMesh.attributes.normal) {
+            geometry.setAttribute(
+              "normal",
+              new THREE.Float32BufferAttribute(
+                resultMesh.attributes.normal.array,
+                3
+              )
+            );
+          }
+          const index = Uint32Array.from(resultMesh.index.array);
+          geometry.setIndex(new THREE.BufferAttribute(index, 1));
+
+          let material = null;
+          if (resultMesh.color) {
+            const color = new THREE.Color(
+              resultMesh.color[0],
+              resultMesh.color[1],
+              resultMesh.color[2]
+            );
+            material = new THREE.MeshPhongMaterial({ color: color });
+          } else {
+            material = new THREE.MeshPhongMaterial({ color: 0xcccccc });
+          }
+          const mesh = new THREE.Mesh(geometry, material);
+          scene.add(mesh);
+        }
       });
 
       const removeButton = document.createElement("button");
@@ -161,11 +198,10 @@ document
       // Save file to local storage
       const reader = new FileReader();
       reader.onload = function (e) {
-        const base64String = btoa(
-          String.fromCharCode(...new Uint8Array(e.target.result))
-        );
-        localStorage.setItem(fileName, base64String);
-        // localStorage.setItem(fileName, e.target.result);
+        let fileBuffer = new Uint8Array(e.target.result);
+        let result = occt.ReadStepFile(fileBuffer, null);
+        console.log(result);
+        localStorage.setItem(fileName, JSON.stringify(result));
       };
       reader.readAsArrayBuffer(fileList[i]);
     }
