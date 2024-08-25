@@ -6,6 +6,7 @@ import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import GUI from "lil-gui";
 
 let camera, scene, renderer;
+let test_model;
 
 const clearButton = document.getElementById("clear");
 clearButton.textContent = "Clear";
@@ -30,6 +31,9 @@ window.addEventListener("load", function () {
 // Canvas
 const canvas = document.getElementById("canvas");
 scene = new THREE.Scene();
+const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
+scene.add(ambientLight);
+
 camera = new THREE.PerspectiveCamera(
   75,
   canvas.clientWidth / canvas.clientHeight,
@@ -115,11 +119,13 @@ animate();
 // TODO: 중복된 이름이 파일 목록에 이미 존재하면 (1), (2), ... 과 같이 파일 이름에 번호를 추가하여 목록에 추가
 const occt = await occtimportjs();
 
+const objectList = document.getElementById("objectList"); // Move this declaration outside
+const addedObjects = []; // 추가된 객체를 저장할 배열
+
 document
   .getElementById("fileInput")
   .addEventListener("change", function (event) {
     const fileList = event.target.files;
-    const objectList = document.getElementById("objectList");
     const existingNames = JSON.parse(localStorage.getItem("fileNames")) || {};
 
     for (let i = 0; i < fileList.length; i++) {
@@ -171,12 +177,23 @@ document
               resultMesh.color[1],
               resultMesh.color[2]
             );
-            material = new THREE.MeshPhongMaterial({ color: color });
+            material = new THREE.MeshStandardMaterial({
+              color: 0xcccccc,
+              roughness: 0.5,
+              metalness: 0.1,
+            });
           } else {
-            material = new THREE.MeshPhongMaterial({ color: 0xcccccc });
+            material = new THREE.MeshPhongMaterial({
+              color: 0xcccccc,
+              roughness: 0.5,
+              metalness: 0.1,
+            });
           }
+
           const mesh = new THREE.Mesh(geometry, material);
           scene.add(mesh);
+          addedObjects.push({ name: fileName, model: mesh }); // 추가된 객체를 배열에 저`
+          updateObjectList(); // 객체 리스트 업데이트
         }
       });
 
@@ -189,6 +206,11 @@ document
         delete existingNames[fileName];
         localStorage.setItem("fileNames", JSON.stringify(existingNames));
         console.log(scene);
+        const index = addedObjects.indexOf(mesh);
+        if (index > -1) {
+          addedObjects.splice(index, 1); // 배열에서 객체 제거
+        }
+        updateObjectList(); // 객체 리스트 업데이트
       });
 
       listItem.appendChild(addButton);
@@ -208,3 +230,32 @@ document
 
     localStorage.setItem("fileNames", JSON.stringify(existingNames));
   });
+
+// 객체 리스트를 업데이트하는 함수
+function updateObjectList() {
+  const objectListElement = document.getElementById("sceneObjectList");
+  objectListElement.innerHTML = ""; // 기존 리스트 초기화
+  addedObjects.forEach((object, index) => {
+    const listItem = document.createElement("li");
+    listItem.textContent = object.name;
+
+    // Create select button
+    const selectButton = document.createElement("button");
+    selectButton.textContent = "Select";
+    selectButton.addEventListener("click", function () {
+      console.log(`Selected: ${fileName}`);
+    });
+
+    // Create remove button
+    const removeButton = document.createElement("button");
+    removeButton.textContent = "Remove";
+    removeButton.addEventListener("click", function () {
+      console.log(`Removed: ${object.name}`);
+      // updateObjectList(); // 객체 리스트 업데이트
+    });
+
+    listItem.appendChild(selectButton); // select 버튼 추가
+    listItem.appendChild(removeButton); // remove 버튼 추가
+    objectListElement.appendChild(listItem);
+  });
+}
