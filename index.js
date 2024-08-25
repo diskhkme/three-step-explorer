@@ -152,7 +152,7 @@ document
         const result = JSON.parse(resultString);
         console.log(result);
         for (let resultMesh of result.meshes) {
-          let geometry = new THREE.BufferGeometry();
+          const geometry = new THREE.BufferGeometry();
           geometry.setAttribute(
             "position",
             new THREE.Float32BufferAttribute(
@@ -186,20 +186,6 @@ document
 
           let geometries = separateGroups(geometry);
           geometry.dispose();
-          // let material = null;
-          // if (resultMesh.color) {
-          //   material = new THREE.MeshStandardMaterial({
-          //     color: new THREE.Color(resultMesh.color),
-          //     roughness: 0.5,
-          //     metalness: 0.1,
-          //   });
-          // } else {
-          //   material = new THREE.MeshStandardMaterial({
-          //     color: 0xcccccc,
-          //     roughness: 0.5,
-          //     metalness: 0.1,
-          //   });
-          // }
           console.log(geometries);
           for (let geometry of geometries) {
             const material = new THREE.MeshStandardMaterial({
@@ -211,6 +197,13 @@ document
             mesh.userData.faceId = faceId;
             faceId += 1;
             scene.add(mesh);
+            const edges = new THREE.EdgesGeometry(geometry);
+            const line = new THREE.LineSegments(
+              edges,
+              new THREE.LineBasicMaterial({ color: 0xffffff * Math.random() })
+            );
+            console.log(line);
+            scene.add(line);
           }
           updateObjectList(); // 객체 리스트 업데이트
         }
