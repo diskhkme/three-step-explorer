@@ -6,7 +6,7 @@ import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import GUI from "lil-gui";
 
 let camera, scene, renderer;
-let test_model;
+let faceId = 0;
 
 const clearButton = document.getElementById("clear");
 clearButton.textContent = "Clear";
@@ -31,8 +31,11 @@ window.addEventListener("load", function () {
 // Canvas
 const canvas = document.getElementById("canvas");
 scene = new THREE.Scene();
-const ambientLight = new THREE.AmbientLight(0x404040); // soft white light
+const ambientLight = new THREE.AmbientLight(0x808040); // soft white light
 scene.add(ambientLight);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+directionalLight.position.setY(1000);
+scene.add(directionalLight);
 
 camera = new THREE.PerspectiveCamera(
   75,
@@ -147,10 +150,9 @@ document
       addButton.addEventListener("click", function () {
         const resultString = localStorage.getItem(fileName);
         const result = JSON.parse(resultString);
-        console.log(result.meshes);
+        console.log(result);
         for (let resultMesh of result.meshes) {
           let geometry = new THREE.BufferGeometry();
-
           geometry.setAttribute(
             "position",
             new THREE.Float32BufferAttribute(
@@ -167,32 +169,49 @@ document
               )
             );
           }
-          const index = Uint32Array.from(resultMesh.index.array);
-          geometry.setIndex(new THREE.BufferAttribute(index, 1));
 
-          let material = null;
-          if (resultMesh.color) {
-            const color = new THREE.Color(
-              resultMesh.color[0],
-              resultMesh.color[1],
-              resultMesh.color[2]
+          if (resultMesh.index) {
+            geometry.setIndex(
+              new THREE.Uint32BufferAttribute(resultMesh.index.array, 1)
             );
-            material = new THREE.MeshStandardMaterial({
-              color: 0xcccccc,
-              roughness: 0.5,
-              metalness: 0.1,
-            });
-          } else {
-            material = new THREE.MeshPhongMaterial({
-              color: 0xcccccc,
-              roughness: 0.5,
-              metalness: 0.1,
-            });
+          }
+          geometry.clearGroups();
+          for (let brepFace of resultMesh.brep_faces) {
+            geometry.addGroup(
+              brepFace.first * 3,
+              (brepFace.last - brepFace.first + 1) * 3,
+              0
+            );
           }
 
-          const mesh = new THREE.Mesh(geometry, material);
-          scene.add(mesh);
-          addedObjects.push({ name: fileName, model: mesh }); // 추가된 객체를 배열에 저`
+          let geometries = separateGroups(geometry);
+          geometry.dispose();
+          // let material = null;
+          // if (resultMesh.color) {
+          //   material = new THREE.MeshStandardMaterial({
+          //     color: new THREE.Color(resultMesh.color),
+          //     roughness: 0.5,
+          //     metalness: 0.1,
+          //   });
+          // } else {
+          //   material = new THREE.MeshStandardMaterial({
+          //     color: 0xcccccc,
+          //     roughness: 0.5,
+          //     metalness: 0.1,
+          //   });
+          // }
+          console.log(geometries);
+          for (let geometry of geometries) {
+            const material = new THREE.MeshStandardMaterial({
+              color: 0xffffff * Math.random(),
+              roughness: 0.5,
+              metalness: 0.1,
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.userData.faceId = faceId;
+            faceId += 1;
+            scene.add(mesh);
+          }
           updateObjectList(); // 객체 리스트 업데이트
         }
       });
@@ -258,4 +277,81 @@ function updateObjectList() {
     listItem.appendChild(removeButton); // remove 버튼 추가
     objectListElement.appendChild(listItem);
   });
+}
+
+// Add this code after initializing the renderer
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+// Add event listener for mouse movement
+canvas.addEventListener("click", (event) => {
+  // Calculate mouse position in normalized device coordinates (-1 to +1)
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+  // Update the raycaster with the camera and mouse position
+  raycaster.setFromCamera(mouse, camera);
+
+  // Calculate objects intersecting the picking ray
+  const intersects = raycaster.intersectObjects(scene.children);
+
+  if (intersects.length > 0) {
+    console.log(intersects[0].object);
+    console.log("Intersected object:", intersects[0].object); // Output the first intersected object
+    console.log("FaceID:", intersects[0].object.userData.faceId);
+  }
+});
+
+function separateGroups(bufGeom) {
+  let outGeometries = [];
+  let groups = bufGeom.groups;
+  let origVerts = bufGeom.getAttribute("position").array;
+  let origNormals = bufGeom.getAttribute("normal").array;
+  let origIndices = bufGeom.index ? bufGeom.index.array : null;
+
+  for (let ig = 0, ng = groups.length; ig < ng; ig++) {
+    let group = groups[ig];
+    let newBufGeom = new THREE.BufferGeometry();
+    let newPositions = [];
+    let newNormals = [];
+    let newIndices = [];
+    let vertexMap = new Map();
+
+    for (let i = 0; i < group.count; i++) {
+      let index = origIndices ? origIndices[group.start + i] : group.start + i;
+      let newIndex;
+
+      if (vertexMap.has(index)) {
+        newIndex = vertexMap.get(index);
+      } else {
+        newIndex = newPositions.length / 3;
+        vertexMap.set(index, newIndex);
+
+        newPositions.push(
+          origVerts[index * 3],
+          origVerts[index * 3 + 1],
+          origVerts[index * 3 + 2]
+        );
+        newNormals.push(
+          origNormals[index * 3],
+          origNormals[index * 3 + 1],
+          origNormals[index * 3 + 2]
+        );
+      }
+
+      newIndices.push(newIndex);
+    }
+
+    newBufGeom.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(newPositions, 3)
+    );
+    newBufGeom.setAttribute(
+      "normal",
+      new THREE.Float32BufferAttribute(newNormals, 3)
+    );
+    newBufGeom.setIndex(newIndices);
+    outGeometries.push(newBufGeom);
+  }
+  return outGeometries;
 }
