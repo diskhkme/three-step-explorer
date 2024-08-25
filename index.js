@@ -68,11 +68,11 @@ controls.maxPolarAngle = Math.PI / 2;
 
 // Add a grid plane
 const gridHelper = new THREE.GridHelper(2000, 20, 0x333333, 0x222222);
-scene.add(gridHelper);
+// scene.add(gridHelper);
 
 // Add a axis helper
 const axesHelper = new THREE.AxesHelper(1000);
-scene.add(axesHelper);
+// scene.add(axesHelper);
 
 // clock
 const clock = new THREE.Clock();
@@ -286,19 +286,37 @@ const mouse = new THREE.Vector2();
 // Add event listener for mouse movement
 canvas.addEventListener("click", (event) => {
   // Calculate mouse position in normalized device coordinates (-1 to +1)
-  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / canvas.clientWidth) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / canvas.clientHeight) * 2 + 1;
+  console.log("Mouse position:", mouse);
 
   // Update the raycaster with the camera and mouse position
   raycaster.setFromCamera(mouse, camera);
 
   // Calculate objects intersecting the picking ray
-  const intersects = raycaster.intersectObjects(scene.children);
+  const intersects = raycaster.intersectObjects(scene.children, true);
 
   if (intersects.length > 0) {
-    console.log(intersects[0].object);
-    console.log("Intersected object:", intersects[0].object); // Output the first intersected object
-    console.log("FaceID:", intersects[0].object.userData.faceId);
+    const intersectedObject = intersects[0].object;
+    console.log("Intersected object:", intersectedObject);
+
+    if (
+      intersectedObject.userData &&
+      intersectedObject.userData.faceId !== undefined
+    ) {
+      console.log("FaceID:", intersectedObject.userData.faceId);
+    } else {
+      console.log("FaceID not found in userData");
+    }
+
+    // Optional: Highlight the intersected object
+    intersectedObject.material.emissive.setHex(0xff0000);
+    setTimeout(() => {
+      intersectedObject.material.emissive.setHex(0x000000);
+    }, 200);
+  } else {
+    console.log("No intersection detected");
   }
 });
 
@@ -355,3 +373,31 @@ function separateGroups(bufGeom) {
   }
   return outGeometries;
 }
+
+// For Debug
+// Create a circular pointer element
+const pointer = document.createElement("div");
+pointer.style.position = "absolute";
+pointer.style.width = "20px";
+pointer.style.height = "20px";
+pointer.style.borderRadius = "50%";
+pointer.style.backgroundColor = "rgba(255, 0, 0, 0.5)";
+pointer.style.pointerEvents = "none";
+pointer.style.transform = "translate(-50%, -50%)"; // Center the pointer
+document.body.appendChild(pointer);
+
+// Update pointer position on mouse move
+window.addEventListener("mousemove", (event) => {
+  pointer.style.left = `${event.clientX}px`;
+  pointer.style.top = `${event.clientY}px`;
+});
+
+// Hide pointer when mouse leaves canvas
+canvas.addEventListener("mouseleave", () => {
+  pointer.style.display = "none";
+});
+
+// Show pointer when mouse enters canvas
+canvas.addEventListener("mouseenter", () => {
+  pointer.style.display = "block";
+});
