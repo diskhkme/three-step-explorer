@@ -5,9 +5,11 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import GUI from "lil-gui";
 import { ConvexGeometry } from "three/examples/jsm/Addons.js";
+import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
 
 let camera, scene, renderer;
 let faceId = 0;
+let partId = 1;
 
 const clearButton = document.getElementById("clear");
 clearButton.textContent = "Clear";
@@ -140,6 +142,7 @@ document
     const fileList = event.target.files;
     const existingNames = JSON.parse(localStorage.getItem("fileNames")) || {};
 
+    const parts = new THREE.Group();
     for (let i = 0; i < fileList.length; i++) {
       let fileName = fileList[i].name;
       if (existingNames[fileName]) {
@@ -197,6 +200,7 @@ document
             color: 0xffffff * Math.random(),
             roughness: 0.5,
             metalness: 0.1,
+            side: THREE.DoubleSide,
           });
           const mesh = new THREE.Mesh(geometry, material);
           let box3 = new THREE.Box3().setFromObject(mesh, true);
@@ -237,7 +241,14 @@ document
           // 구를 씬에 추가
           scene.add(sphere);
 
-          const group = new THREE.Group();
+          const part = new THREE.Group();
+          part.userData.name = resultMesh.name
+            ? resultMesh.name
+            : `Part-${partId}`;
+          if (!resultMesh.name) {
+            partId += 1;
+          }
+          console.debug(resultMesh);
           let geometries = separateGroups(geometry);
           geometry.dispose();
           console.log(geometries);
@@ -246,23 +257,25 @@ document
               color: 0xffffff * Math.random(),
               roughness: 0.5,
               metalness: 0.1,
+              side: THREE.DoubleSide,
             });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.userData.faceId = faceId;
             faceId += 1;
-            group.add(mesh);
+            part.add(mesh);
             const edges = new THREE.EdgesGeometry(geometry);
             const line = new THREE.LineSegments(
               edges,
               new THREE.LineBasicMaterial({ color: 0xffffff * Math.random() })
             );
-            console.log(line);
-            // 그룹 내 모든 vertex들을 수집합니다
-            scene.add(group);
-            scene.add(line);
+            // group.add(line); //  곡면에 edge가 많아서 edge-edge 간격이 좁은 경우 face selection이 잘 되지않음.
           }
-          updateObjectList(); // 객체 리스트 업데이트
+          parts.add(part);
         }
+        console.log(parts);
+        scene.add(parts);
+        addedObjects.push({ name: fileName, mesh: parts });
+        updateObjectList(); // 객체 리스트 업데이트
       });
 
       const removeButton = document.createElement("button");
@@ -303,7 +316,7 @@ document
 function updateObjectList() {
   const objectListElement = document.getElementById("sceneObjectList");
   objectListElement.innerHTML = ""; // 기존 리스트 초기화
-  addedObjects.forEach((object, index) => {
+  addedObjects.forEach((object) => {
     const listItem = document.createElement("li");
     listItem.textContent = object.name;
 
@@ -311,7 +324,7 @@ function updateObjectList() {
     const selectButton = document.createElement("button");
     selectButton.textContent = "Select";
     selectButton.addEventListener("click", function () {
-      console.log(`Selected: ${fileName}`);
+      console.log(`Selected: ${object.name}`);
     });
 
     // Create remove button
@@ -325,6 +338,32 @@ function updateObjectList() {
     listItem.appendChild(selectButton); // select 버튼 추가
     listItem.appendChild(removeButton); // remove 버튼 추가
     objectListElement.appendChild(listItem);
+
+    // Add child names to the list
+    object.mesh.children.forEach((child) => {
+      const childItem = document.createElement("li");
+      childItem.style.paddingLeft = "20px"; // Indentation for child items
+      childItem.textContent = child.userData.name; // Assuming child has userData.name
+
+      // Create select button for child
+      const childSelectButton = document.createElement("button");
+      childSelectButton.textContent = "Select";
+      childSelectButton.addEventListener("click", function () {
+        console.log(`Selected child: ${child.userData.name}`);
+      });
+
+      // Create remove button for child
+      const childRemoveButton = document.createElement("button");
+      childRemoveButton.textContent = "Remove";
+      childRemoveButton.addEventListener("click", function () {
+        console.log(`Removed child: ${child.userData.name}`);
+        // Logic to remove child from the scene can be added here
+      });
+
+      childItem.appendChild(childSelectButton); // select 버튼 추가
+      childItem.appendChild(childRemoveButton); // remove 버튼 추가
+      objectListElement.appendChild(childItem);
+    });
   });
 }
 

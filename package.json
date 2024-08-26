@@ -6,6 +6,7 @@
     "lil-gui": "^0.19.2",
     "occt-import-js": "^0.0.22",
     "three": "^0.167.1",
+    "three-bvh-csg": "^0.0.16",
     "three-viewport-gizmo": "^0.1.5",
     "vite-plugin-wasm": "^3.3.0"
   },
