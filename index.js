@@ -4,6 +4,7 @@ import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import GUI from "lil-gui";
+import { ConvexGeometry } from "three/examples/jsm/Addons.js";
 
 let camera, scene, renderer;
 let faceId = 0;
@@ -183,7 +184,52 @@ document
               0
             );
           }
+          // let group = new THREE.Group();
+          const material = new THREE.MeshStandardMaterial({
+            color: 0xffffff * Math.random(),
+            roughness: 0.5,
+            metalness: 0.1,
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          let box3 = new THREE.Box3().setFromObject(mesh, true);
+          let boundingBox = new THREE.Box3Helper(box3, 0x0000ff);
+          scene.add(boundingBox);
 
+          // 바운딩 박스의 중심 계산
+          let center = new THREE.Vector3();
+          boundingBox.box.getCenter(center);
+
+          // 바운딩 박스의 크기의 절반 계산
+          let halfSize = new THREE.Vector3();
+          boundingBox.box.getSize(halfSize).multiplyScalar(0.5);
+
+          // 중심에서 꼭짓점(최소 x, y, z)으로의 벡터 계산
+          let toVertex = new THREE.Vector3(
+            -halfSize.x,
+            -halfSize.y,
+            -halfSize.z
+          );
+
+          // 반지름이 20인 구 지오메트리 생성
+          let sphereGeometry = new THREE.SphereGeometry(2, 32, 32);
+
+          // 구 재질 생성 (예: 빨간색 반투명)
+          let sphereMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.5,
+          });
+
+          // 구 메쉬 생성
+          let sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+
+          // 구의 위치를 바운딩 박스의 중심에서 꼭짓점으로 이동
+          sphere.position.copy(center).add(toVertex);
+
+          // 구를 씬에 추가
+          scene.add(sphere);
+
+          const group = new THREE.Group();
           let geometries = separateGroups(geometry);
           geometry.dispose();
           console.log(geometries);
@@ -196,13 +242,15 @@ document
             const mesh = new THREE.Mesh(geometry, material);
             mesh.userData.faceId = faceId;
             faceId += 1;
-            scene.add(mesh);
+            group.add(mesh);
             const edges = new THREE.EdgesGeometry(geometry);
             const line = new THREE.LineSegments(
               edges,
               new THREE.LineBasicMaterial({ color: 0xffffff * Math.random() })
             );
             console.log(line);
+            // 그룹 내 모든 vertex들을 수집합니다
+            scene.add(group);
             scene.add(line);
           }
           updateObjectList(); // 객체 리스트 업데이트
