@@ -38,9 +38,17 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
 directionalLight.position.setY(1000);
 scene.add(directionalLight);
 
-camera = new THREE.PerspectiveCamera(
-  75,
-  canvas.clientWidth / canvas.clientHeight,
+// camera = new THREE.PerspectiveCamera(
+//   75,
+//   canvas.clientWidth / canvas.clientHeight,
+//   0.1,
+//   10000
+// );
+camera = new THREE.OrthographicCamera(
+  canvas.clientWidth / -2,
+  canvas.clientWidth / 2, // left, right
+  canvas.clientHeight / 2,
+  canvas.clientHeight / -2, // top, bottom
   0.1,
   10000
 );
