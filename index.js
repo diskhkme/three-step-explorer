@@ -4,12 +4,22 @@ import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import GUI from "lil-gui";
-import { ConvexGeometry } from "three/examples/jsm/Addons.js";
+import {
+  ConvexGeometry,
+  TransformControls,
+} from "three/examples/jsm/Addons.js";
 import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
 
 let camera, scene, renderer;
 let faceId = 0;
 let partId = 1;
+
+/// Define brushA and brushB
+let brushA, brushB;
+let isSelectingA = false; // Flag for brushA selection
+let isSelectingB = false; // Flag for brushB selection
+let isSelectedA = false;
+let isSelectedB = false;
 
 const clearButton = document.getElementById("clear");
 clearButton.textContent = "Clear";
@@ -71,6 +81,7 @@ renderer.setSize(canvas.clientWidth, canvas.clientHeight);
 const gui = new GUI();
 
 // Add OrbitControls
+
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
 controls.dampingFactor = 0.25;
@@ -79,15 +90,36 @@ controls.maxPolarAngle = Math.PI / 2;
 
 // Add a grid plane
 const gridHelper = new THREE.GridHelper(2000, 20, 0x333333, 0x222222);
-// scene.add(gridHelper);
+scene.add(gridHelper);
 
 // Add a axis helper
 const axesHelper = new THREE.AxesHelper(1000);
-// scene.add(axesHelper);
+scene.add(axesHelper);
 
 // clock
 const clock = new THREE.Clock();
 
+const transformControls = new TransformControls(camera, renderer.domElement);
+
+window.addEventListener("keydown", function (event) {
+  console.log(event.key);
+  switch (event.key) {
+    case "r": // R 키로 회전 모드 설정
+      transformControls.setMode("rotate");
+      console.log("TransformControls mode set to rotate");
+      break;
+    case "t": // T 키로 이동 모드 설정
+      transformControls.setMode("translate");
+      console.log("TransformControls mode set to translate");
+      break;
+    case "s": // S 키로 스케일 모드 설정
+      transformControls.setMode("scale");
+      console.log("TransformControls mode set to scale");
+      break;
+    default:
+      break;
+  }
+});
 /**
  * Gizmo
  */
@@ -143,6 +175,7 @@ document
     const existingNames = JSON.parse(localStorage.getItem("fileNames")) || {};
 
     const parts = new THREE.Group();
+    parts.userData.geometry = [];
     for (let i = 0; i < fileList.length; i++) {
       let fileName = fileList[i].name;
       if (existingNames[fileName]) {
@@ -163,6 +196,10 @@ document
         const resultString = localStorage.getItem(fileName);
         const result = JSON.parse(resultString);
         console.log(result);
+
+        const pivot = new THREE.Object3D();
+        scene.add(pivot);
+
         for (let resultMesh of result.meshes) {
           const geometry = new THREE.BufferGeometry();
           geometry.setAttribute(
@@ -202,10 +239,13 @@ document
             metalness: 0.1,
             side: THREE.DoubleSide,
           });
+
           const mesh = new THREE.Mesh(geometry, material);
           let box3 = new THREE.Box3().setFromObject(mesh, true);
           let boundingBox = new THREE.Box3Helper(box3, 0x0000ff);
-          scene.add(boundingBox);
+          parts.add(boundingBox);
+          // parts.add(pivot);
+          pivot.add(parts);
 
           // 바운딩 박스의 중심 계산
           let center = new THREE.Vector3();
@@ -233,13 +273,14 @@ document
           });
 
           // 구 메쉬 생성
-          let sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+          const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
 
           // 구의 위치를 바운딩 박스의 중심에서 꼭짓점으로 이동
           sphere.position.copy(center).add(toVertex);
-
+          console.log(sphere.position);
           // 구를 씬에 추가
-          scene.add(sphere);
+          parts.add(sphere);
+          // scene.add(sphere);
 
           const part = new THREE.Group();
           part.userData.name = resultMesh.name
@@ -249,6 +290,8 @@ document
             partId += 1;
           }
           console.debug(resultMesh);
+          console.log(geometry);
+          parts.userData.geometry.push(geometry);
           let geometries = separateGroups(geometry);
           geometry.dispose();
           console.log(geometries);
@@ -273,9 +316,45 @@ document
           parts.add(part);
         }
         console.log(parts);
-        scene.add(parts);
-        addedObjects.push({ name: fileName, mesh: parts });
-        updateObjectList(); // 객체 리스트 업데이트
+        // scene.add(parts);
+        parts.userData.name = fileName;
+
+        // const transformControls = new TransformControls(
+        //   camera,
+        //   renderer.domElement
+        // );
+
+        transformControls.attach(pivot);
+        scene.add(transformControls);
+
+        // Listen to mouse down event to disable OrbitControls while using TransformControls
+        transformControls.addEventListener("mouseDown", function () {
+          controls.enabled = false;
+        });
+
+        // Enable OrbitControls again on mouse up
+        transformControls.addEventListener("mouseUp", function () {
+          controls.enabled = true;
+        });
+
+        transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
+        transformControls.setTranslationSnap(5);
+
+        let corner = null;
+        parts.children.forEach((child) => {
+          if (child.isMesh) {
+            corner = child;
+          }
+        });
+
+        if (corner) {
+          parts.position.sub(corner.position);
+        } else {
+          console.warn("No Pivot object found.");
+        }
+
+        addedObjects.push({ name: result.root.children[0].name, mesh: parts });
+        updateObjectList();
       });
 
       const removeButton = document.createElement("button");
@@ -371,7 +450,6 @@ function updateObjectList() {
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-// Add event listener for mouse movement
 canvas.addEventListener("click", (event) => {
   // Calculate mouse position in normalized device coordinates (-1 to +1)
   const rect = canvas.getBoundingClientRect();
@@ -393,12 +471,19 @@ canvas.addEventListener("click", (event) => {
       intersectedObject.userData &&
       intersectedObject.userData.faceId !== undefined
     ) {
+      let selectedObject = intersectedObject;
+      while (selectedObject.parent.type !== "Scene")
+        selectedObject = selectedObject.parent;
+      initializeBrush(selectedObject);
+
+      // useGroup =true
+      // initializeBrush(intersectedObject);
+
       console.log("FaceID:", intersectedObject.userData.faceId);
     } else {
       console.log("FaceID not found in userData");
     }
-
-    // Optional: Highlight the intersected object
+    // console.log(intersectedObject.parent);
     intersectedObject.material.emissive.setHex(0xff0000);
     setTimeout(() => {
       intersectedObject.material.emissive.setHex(0x000000);
@@ -489,3 +574,122 @@ canvas.addEventListener("mouseleave", () => {
 canvas.addEventListener("mouseenter", () => {
   pointer.style.display = "block";
 });
+
+const sidebar = document.getElementById("sidebar");
+// Create buttons for selecting brushes
+const buttonA = document.createElement("button");
+buttonA.textContent = "Select Brush A";
+sidebar.appendChild(buttonA);
+
+const buttonB = document.createElement("button");
+buttonB.textContent = "Select Brush B";
+sidebar.appendChild(buttonB);
+
+// Add event listeners for buttonA
+buttonA.addEventListener("click", function () {
+  if (!isSelectingB) {
+    isSelectedA = false;
+    // Prevent selecting A if B is selecting
+    isSelectingA = !isSelectingA; // Toggle selection flag
+    buttonA.textContent = isSelectingA
+      ? "Select Brush A (Selecting...)"
+      : "Select Brush A"; // Update text
+  }
+  if (!isSelectedB) {
+    buttonB.textContent = isSelectingB
+      ? "Select Brush B (Selecting...)"
+      : "Select Brush B"; // Update text
+  }
+});
+
+// Add event listeners for buttonB
+buttonB.addEventListener("click", function () {
+  if (!isSelectingA) {
+    isSelectedB = false;
+    // Prevent selecting B if A is selecting
+    isSelectingB = !isSelectingB; // Toggle selection flag
+    buttonB.textContent = isSelectingB
+      ? "Select Brush B (Selecting...)"
+      : "Select Brush B"; // Update text
+  }
+  if (!isSelectedA) {
+    buttonA.textContent = isSelectingA
+      ? "Select Brush A (Selecting...)"
+      : "Select Brush A"; // Update text
+  }
+});
+
+// Add UI button for CSG operation
+const csgButton = document.createElement("button");
+csgButton.textContent = "Perform CSG Operation";
+sidebar.appendChild(csgButton);
+
+csgButton.addEventListener("click", function () {
+  if (brushA && brushB) {
+    // brushA.updateMatrixWorld();
+    // brushB.updateMatrixWorld();
+    // console.log(brushB);
+    console.log(brushA);
+    console.log(brushB);
+    const evaluator = new Evaluator();
+    evaluator.useGroups = false;
+    const result = evaluator.evaluate(brushA, brushB, SUBTRACTION); // Perform CSG operation
+    console.log(result);
+    result.position.setY(1000);
+    scene.add(result); // Add the result to the scene
+    console.log("CSG operation performed:", result);
+  } else {
+    console.log("BrushA or BrushB is not set.");
+  }
+});
+
+// Function to add objects to the scene and set brushes
+function initializeBrush(mesh) {
+  console.log(mesh);
+  if (!isSelectingA && !isSelectingB) return;
+
+  const brush = new Brush(mesh.userData.geometry[0]); // Create a Brush from the mesh geometry
+  brush.updateMatrixWorld();
+
+  if (isSelectingA) {
+    console.log("Check A");
+    brushA = brush; // Set brushA to the current object
+    isSelectingA = false; // Reset the flag
+    buttonA.textContent = mesh.userData.name; // Reset button text
+    isSelectedA = true;
+  } else if (isSelectingB) {
+    console.log("Check B");
+    brushB = brush; // Set brushB to the current object
+    isSelectingB = false; // Reset the flag
+    buttonB.textContent = mesh.userData.name; // Reset button text
+    isSelectedB = true;
+  }
+}
+// function groupToMesh(group, material) {
+//   const geometries = [];
+
+//   // Traverse through the group and collect geometries
+//   group.traverse((child) => {
+//     if (child.isMesh) {
+//       geometries.push(child.geometry);
+//     }
+//   });
+
+//   // Merge geometries into one
+//   const mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(
+//     geometries,
+//     false
+//   );
+
+//   // Create a new mesh with the merged geometry
+//   const mesh = new THREE.Mesh(mergedGeometry, material);
+
+//   return mesh;
+// }
+
+// // Usage example
+// const group = new THREE.Group();
+// // Add meshes to the group
+// const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+// const newMesh = groupToMesh(group, material);
+// scene.add(newMesh);
