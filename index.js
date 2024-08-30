@@ -162,7 +162,6 @@ function animate() {
 animate();
 
 // local storage
-// TODO: 중복된 이름이 파일 목록에 이미 존재하면 (1), (2), ... 과 같이 파일 이름에 번호를 추가하여 목록에 추가
 const occt = await occtimportjs();
 
 const objectList = document.getElementById("objectList"); // Move this declaration outside
@@ -198,6 +197,7 @@ document
         console.log(result);
 
         const pivot = new THREE.Object3D();
+        pivot.userData.geometry = [];
         scene.add(pivot);
 
         for (let resultMesh of result.meshes) {
@@ -219,11 +219,22 @@ document
             );
           }
 
+          if (resultMesh.attributes.uv) {
+            geometry.setAttribute(
+              "uv",
+              new THREE.Float32BufferAttribute(
+                resultMesh.attributes.uv.array,
+                2
+              )
+            );
+          }
+
           if (resultMesh.index) {
             geometry.setIndex(
               new THREE.Uint32BufferAttribute(resultMesh.index.array, 1)
             );
           }
+          pivot.userData.geometry.push(geometry.clone());
           geometry.clearGroups();
           for (let brepFace of resultMesh.brep_faces) {
             geometry.addGroup(
