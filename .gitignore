@@ -130,4 +130,5 @@ dist
 .pnp.*
 
 # +++
-occt-import-js/
+.vscode/
+.github/
