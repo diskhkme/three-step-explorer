@@ -1,0 +1,32 @@
+{
+  "name": "replicad-app-example",
+  "version": "0.17.1",
+  "description": "A simple React app based on replicad.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "serve": "vite preview"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.111.5",
+    "@react-three/fiber": "8.10.0",
+    "comlink": "^4.3.1",
+    "file-saver": "^2.0.5",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "replicad": "^0.17.1",
+    "replicad-opencascadejs": "^0.17.1",
+    "replicad-threejs-helper": "^0.17.0",
+    "three": "0.148.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "3.0.1",
+    "vite": "^4.5.3"
+  },
+  "browserslist": [
+    ">0.2%",
+    "not dead"
+  ]
+}
