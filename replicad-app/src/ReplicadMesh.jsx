@@ -5,6 +5,7 @@ import {
   syncFaces,
   syncLines,
   syncLinesFromFaces,
+  toggleHighlight,
 } from "replicad-threejs-helper";
 
 export default React.memo(function ShapeMeshes({ faces, edges }) {
@@ -16,10 +17,18 @@ export default React.memo(function ShapeMeshes({ faces, edges }) {
   useLayoutEffect(() => {
     // We use the three helpers to synchronise the buffer geometry with the
     // new data from the parameters
-    if (faces) syncFaces(body.current, faces);
-
-    if (edges) syncLines(lines.current, edges);
-    else if (faces) syncLinesFromFaces(lines.current, body.current);
+    if (faces) {
+      console.log(faces);
+      console.log(body.current, lines.current);
+      // toggleHighlight(0, faces.BufferGeometry);
+      syncFaces(body.current, faces);
+    }
+    if (edges) {
+      console.log(edges);
+      console.log(body.current, lines.current);
+      // toggleHighlight(0, edges.BufferGeometry);
+      syncLines(lines.current, edges);
+    } else if (faces) syncLinesFromFaces(lines.current, body.current);
 
     // We have configured the canvas to only refresh when there is a change,
     // the invalidate function is here to tell it to recompute

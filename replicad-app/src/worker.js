@@ -1,6 +1,6 @@
 import opencascade from "replicad-opencascadejs/src/replicad_single.js";
 import opencascadeWasm from "replicad-opencascadejs/src/replicad_single.wasm?url";
-import { setOC } from "replicad";
+import { setOC, getOC, importSTEP } from "replicad";
 import { expose } from "comlink";
 
 // We import our model as a simple function
@@ -20,27 +20,38 @@ const init = async () => {
 
   return true;
 };
+
 const started = init();
 
-function createBlob(thickness) {
+async function createBlob(thickness) {
   // note that you might want to do some caching for more complex models
   return started.then(() => {
     return drawBox(thickness).blobSTL();
   });
 }
 
-function createMesh(thickness) {
+async function createMesh(blob) {
+  const sblob = await importSTEP(blob);
+  console.timeEnd(this.name);
   return started.then(() => {
-    const box = drawBox(thickness);
-    // This is how you get the data structure that the replica-three-helper
-    // can synchronise with three BufferGeometry
     return {
-      faces: box.mesh(),
-      edges: box.meshEdges(),
+      faces: sblob.mesh(),
+      edges: sblob.meshEdges(),
+    };
+  });
+}
+
+async function importSTEP2(blob) {
+  let compound = await importSTEP(blob);
+  compound = await compound.simplify();
+  const blob2 = compound.blobSTEP();
+  return started.then(() => {
+    return {
+      blob: blob2,
     };
   });
 }
 
 // comlink is great to expose your functions within the worker as a simple API
 // to your app.
-expose({ createBlob, createMesh });
+expose({ createBlob, createMesh, importSTEP2 });
