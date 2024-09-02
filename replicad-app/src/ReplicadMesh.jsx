@@ -26,7 +26,6 @@ export default React.memo(function ShapeMeshes({ faces, edges }) {
     if (edges) {
       console.log(edges);
       console.log(body.current, lines.current);
-      // toggleHighlight(0, edges.BufferGeometry);
       syncLines(lines.current, edges);
     } else if (faces) syncLinesFromFaces(lines.current, body.current);
 
