@@ -1,13 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
-import GUI from "lil-gui";
-import {
-  ConvexGeometry,
-  TransformControls,
-} from "three/examples/jsm/Addons.js";
+// import GUI from "lil-gui";
+import { TransformControls } from "three/examples/jsm/Addons.js";
 import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
 
 let camera, scene, renderer;
@@ -20,6 +15,21 @@ let isSelectingA = false; // Flag for brushA selection
 let isSelectingB = false; // Flag for brushB selection
 let isSelectedA = false;
 let isSelectedB = false;
+
+let cornerSpheres = [];
+let lastHighlightedObject = null;
+let selectedObjects = [];
+const ignoredTypes = [
+  "TransformControls",
+  "GridHelper",
+  "AxesHelper",
+  "TransformControlsPlane",
+];
+
+let isMouseDown = false;
+let mouseDownTime = 0;
+const dragThreshold = 200; // 드래그로 간주할 시간 임계값 (밀리초)
+let currentTransform = null;
 
 const clearButton = document.getElementById("clear");
 clearButton.textContent = "Clear";
@@ -35,8 +45,7 @@ window.addEventListener("load", function () {
   const existingNames = JSON.parse(localStorage.getItem("fileNames")) || {};
 
   for (const fileName in existingNames) {
-    const listItem = document.createElement("li");
-    listItem.textContent = fileName;
+    const listItem = createListItem(fileName);
     objectList.appendChild(listItem);
   }
 });
@@ -78,10 +87,9 @@ renderer.setSize(canvas.clientWidth, canvas.clientHeight);
 /**
  * Debug
  */
-const gui = new GUI();
+// const gui = new GUI();
 
 // Add OrbitControls
-
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
 controls.dampingFactor = 0.25;
@@ -151,7 +159,6 @@ gizmo.addEventListener("pointerup", (event) => {
 
 function animate() {
   requestAnimationFrame(animate);
-
   const delta = clock.getDelta();
   if (helper.animating) helper.update(delta);
   renderer.clear();
@@ -169,238 +176,262 @@ const addedObjects = []; // 추가된 객체를 저장할 배열
 
 document
   .getElementById("fileInput")
-  .addEventListener("change", function (event) {
-    const fileList = event.target.files;
-    const existingNames = JSON.parse(localStorage.getItem("fileNames")) || {};
+  .addEventListener("change", handleFileInput);
 
-    const parts = new THREE.Group();
-    parts.userData.geometry = [];
-    for (let i = 0; i < fileList.length; i++) {
-      let fileName = fileList[i].name;
-      if (existingNames[fileName]) {
-        let count = existingNames[fileName];
-        fileName = `${fileName} (${count})`;
-        existingNames[fileList[i].name] = count + 1;
-      } else {
-        existingNames[fileList[i].name] = 1;
-      }
+function handleFileInput(event) {
+  const fileList = event.target.files;
+  const existingNames = JSON.parse(localStorage.getItem("fileNames")) || {};
 
-      const listItem = document.createElement("li");
-      listItem.textContent = fileName;
+  for (let i = 0; i < fileList.length; i++) {
+    processFile(fileList[i], existingNames);
+  }
 
-      // Create add and remove buttons
-      const addButton = document.createElement("button");
-      addButton.textContent = "Add";
-      addButton.addEventListener("click", function () {
-        const resultString = localStorage.getItem(fileName);
-        const result = JSON.parse(resultString);
-        console.log(result);
+  localStorage.setItem("fileNames", JSON.stringify(existingNames));
+}
 
-        const pivot = new THREE.Object3D();
-        pivot.userData.geometry = [];
-        scene.add(pivot);
+function processFile(file, existingNames) {
+  let fileName = getUniqueFileName(file.name, existingNames);
+  const listItem = createListItem(fileName);
+  objectList.appendChild(listItem);
 
-        for (let resultMesh of result.meshes) {
-          const geometry = new THREE.BufferGeometry();
-          geometry.setAttribute(
-            "position",
-            new THREE.Float32BufferAttribute(
-              resultMesh.attributes.position.array,
-              3
-            )
-          );
-          if (resultMesh.attributes.normal) {
-            geometry.setAttribute(
-              "normal",
-              new THREE.Float32BufferAttribute(
-                resultMesh.attributes.normal.array,
-                3
-              )
-            );
-          }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    let fileBuffer = new Uint8Array(e.target.result);
+    let result = occt.ReadStepFile(fileBuffer, null);
+    localStorage.setItem(fileName, JSON.stringify(result));
+  };
+  reader.readAsArrayBuffer(file);
+}
 
-          if (resultMesh.attributes.uv) {
-            geometry.setAttribute(
-              "uv",
-              new THREE.Float32BufferAttribute(
-                resultMesh.attributes.uv.array,
-                2
-              )
-            );
-          }
+function getUniqueFileName(originalName, existingNames) {
+  if (existingNames[originalName]) {
+    let count = existingNames[originalName];
+    existingNames[originalName] = count + 1;
+    return `${originalName} (${count})`;
+  } else {
+    existingNames[originalName] = 1;
+    return originalName;
+  }
+}
 
-          if (resultMesh.index) {
-            geometry.setIndex(
-              new THREE.Uint32BufferAttribute(resultMesh.index.array, 1)
-            );
-          }
-          pivot.userData.geometry.push(geometry.clone());
-          geometry.clearGroups();
-          for (let brepFace of resultMesh.brep_faces) {
-            geometry.addGroup(
-              brepFace.first * 3,
-              (brepFace.last - brepFace.first + 1) * 3,
-              0
-            );
-          }
-          // let group = new THREE.Group();
-          const material = new THREE.MeshStandardMaterial({
-            color: 0xffffff * Math.random(),
-            roughness: 0.5,
-            metalness: 0.1,
-            side: THREE.DoubleSide,
-          });
+function createListItem(fileName) {
+  const listItem = document.createElement("li");
+  listItem.textContent = fileName;
 
-          const mesh = new THREE.Mesh(geometry, material);
-          let box3 = new THREE.Box3().setFromObject(mesh, true);
-          let boundingBox = new THREE.Box3Helper(box3, 0x0000ff);
-          parts.add(boundingBox);
-          // parts.add(pivot);
-          pivot.add(parts);
+  const addButton = createButton("Add", () => addModelToScene(fileName));
+  const removeButton = createButton("Remove", () =>
+    removeModelFromStorage(fileName, listItem)
+  );
 
-          // 바운딩 박스의 중심 계산
-          let center = new THREE.Vector3();
-          boundingBox.box.getCenter(center);
+  listItem.appendChild(addButton);
+  listItem.appendChild(removeButton);
+  return listItem;
+}
 
-          // 바운딩 박스의 크기의 절반 계산
-          let halfSize = new THREE.Vector3();
-          boundingBox.box.getSize(halfSize).multiplyScalar(0.5);
+function createButton(text, onClick) {
+  const button = document.createElement("button");
+  button.textContent = text;
+  button.addEventListener("click", onClick);
+  return button;
+}
+function addModelToScene(fileName) {
+  const resultString = localStorage.getItem(fileName);
+  const result = JSON.parse(resultString);
 
-          // 중심에서 꼭짓점(최소 x, y, z)으로의 벡터 계산
-          let toVertex = new THREE.Vector3(
-            -halfSize.x,
-            -halfSize.y,
-            -halfSize.z
-          );
+  const rootObject = new THREE.Object3D();
+  rootObject.name = fileName;
+  scene.add(rootObject);
 
-          // 반지름이 20인 구 지오메트리 생성
-          let sphereGeometry = new THREE.SphereGeometry(2, 32, 32);
+  const parts = new THREE.Group();
+  parts.name = "ModelParts";
+  rootObject.add(parts);
+  rootObject.userData.geometry = [];
 
-          // 구 재질 생성 (예: 빨간색 반투명)
-          let sphereMaterial = new THREE.MeshBasicMaterial({
-            color: 0xff0000,
-            transparent: true,
-            opacity: 0.5,
-          });
+  result.meshes.forEach((resultMesh) => {
+    const geometry = createGeometryFromMesh(resultMesh);
+    const part = createPartFromGeometry(geometry, resultMesh.name);
+    rootObject.userData.geometry.push(geometry.clone());
+    parts.add(part);
+  });
 
-          // 구 메쉬 생성
-          const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+  // Create bounding box for the entire model
+  const boundingBox = new THREE.Box3().setFromObject(parts);
+  const boundingBoxHelper = new THREE.Box3Helper(boundingBox, 0xa0a0a0);
+  parts.add(boundingBoxHelper);
 
-          // 구의 위치를 바운딩 박스의 중심에서 꼭짓점으로 이동
-          sphere.position.copy(center).add(toVertex);
-          console.log(sphere.position);
-          // 구를 씬에 추가
-          parts.add(sphere);
-          // scene.add(sphere);
+  // Add spheres at all 8 corners of the bounding box
+  const corners = getCorners(boundingBox);
+  corners.forEach((corner) => {
+    const cornerSphere = createCornerSphere(corner);
+    parts.add(cornerSphere);
+    cornerSpheres.push(cornerSphere);
+  });
+  rootObject.position.sub(corners[0]);
+  // Adjust position so the pivot is at the origin
+  addedObjects.push({ name: fileName, mesh: rootObject });
+  updateObjectList();
+}
 
-          const part = new THREE.Group();
-          part.userData.name = resultMesh.name
-            ? resultMesh.name
-            : `Part-${partId}`;
-          if (!resultMesh.name) {
-            partId += 1;
-          }
-          console.debug(resultMesh);
-          console.log(geometry);
-          parts.userData.geometry.push(geometry);
-          let geometries = separateGroups(geometry);
-          geometry.dispose();
-          console.log(geometries);
-          for (let geometry of geometries) {
-            const material = new THREE.MeshStandardMaterial({
-              color: 0xffffff * Math.random(),
-              roughness: 0.5,
-              metalness: 0.1,
-              side: THREE.DoubleSide,
-            });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.userData.faceId = faceId;
-            faceId += 1;
-            part.add(mesh);
-            const edges = new THREE.EdgesGeometry(geometry);
-            const line = new THREE.LineSegments(
-              edges,
-              new THREE.LineBasicMaterial({ color: 0xffffff * Math.random() })
-            );
-            // group.add(line); //  곡면에 edge가 많아서 edge-edge 간격이 좁은 경우 face selection이 잘 되지않음.
-          }
-          parts.add(part);
-        }
-        console.log(parts);
-        // scene.add(parts);
-        parts.userData.name = fileName;
+function getCorners(boundingBox) {
+  return [
+    new THREE.Vector3(boundingBox.min.x, boundingBox.min.y, boundingBox.min.z),
+    new THREE.Vector3(boundingBox.min.x, boundingBox.min.y, boundingBox.max.z),
+    new THREE.Vector3(boundingBox.min.x, boundingBox.max.y, boundingBox.min.z),
+    new THREE.Vector3(boundingBox.min.x, boundingBox.max.y, boundingBox.max.z),
+    new THREE.Vector3(boundingBox.max.x, boundingBox.min.y, boundingBox.min.z),
+    new THREE.Vector3(boundingBox.max.x, boundingBox.min.y, boundingBox.max.z),
+    new THREE.Vector3(boundingBox.max.x, boundingBox.max.y, boundingBox.min.z),
+    new THREE.Vector3(boundingBox.max.x, boundingBox.max.y, boundingBox.max.z),
+  ];
+}
 
-        // const transformControls = new TransformControls(
-        //   camera,
-        //   renderer.domElement
-        // );
+function createCornerSphere(position) {
+  const sphereGeometry = new THREE.SphereGeometry(2, 16, 16);
+  const sphereMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+  sphere.position.copy(position);
+  sphere.userData.isCornerSphere = true; // 태그 추가
+  return sphere;
+}
+function enableOrbitControls() {
+  controls.enabled = true;
+}
+function disableOrbitControls() {
+  controls.enabled = false;
+}
 
-        transformControls.attach(pivot);
-        scene.add(transformControls);
+function setupTransformControls(object) {
+  transformControls.attach(object);
+  scene.add(transformControls);
 
-        // Listen to mouse down event to disable OrbitControls while using TransformControls
-        transformControls.addEventListener("mouseDown", function () {
-          controls.enabled = false;
-        });
+  transformControls.addEventListener("mouseDown", disableOrbitControls);
+  transformControls.addEventListener("mouseUp", enableOrbitControls);
 
-        // Enable OrbitControls again on mouse up
-        transformControls.addEventListener("mouseUp", function () {
-          controls.enabled = true;
-        });
+  transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
+  transformControls.setTranslationSnap(10);
+}
 
-        transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
-        transformControls.setTranslationSnap(5);
+function resetTransformControls() {
+  // TransformControls에서 객체 분리
+  if (transformControls.object) {
+    transformControls.detach();
+  }
 
-        let corner = null;
-        parts.children.forEach((child) => {
-          if (child.isMesh) {
-            corner = child;
-          }
-        });
+  // 이벤트 리스너 제거
+  transformControls.removeEventListener("mouseDown", disableOrbitControls);
+  transformControls.removeEventListener("mouseUp", enableOrbitControls);
 
-        if (corner) {
-          parts.position.sub(corner.position);
-        } else {
-          console.warn("No Pivot object found.");
-        }
+  // TransformControls를 씬에서 제거
+  scene.remove(transformControls);
 
-        addedObjects.push({ name: result.root.children[0].name, mesh: parts });
-        updateObjectList();
-      });
+  // 스냅 설정 초기화
+  transformControls.setRotationSnap(null);
+  transformControls.setTranslationSnap(null);
+  transformControls.setScaleSnap(null);
 
-      const removeButton = document.createElement("button");
-      removeButton.textContent = "Remove";
-      removeButton.addEventListener("click", function () {
-        // Remove item from list and local storage
-        objectList.removeChild(listItem);
-        localStorage.removeItem(fileName);
-        delete existingNames[fileName];
-        localStorage.setItem("fileNames", JSON.stringify(existingNames));
-        console.log(scene);
-        const index = addedObjects.indexOf(mesh);
-        if (index > -1) {
-          addedObjects.splice(index, 1); // 배열에서 객체 제거
-        }
-        updateObjectList(); // 객체 리스트 업데이트
-      });
+  // 모드 초기화
+  transformControls.setMode("translate");
 
-      listItem.appendChild(addButton);
-      listItem.appendChild(removeButton);
-      objectList.appendChild(listItem);
+  // 크기 및 공간 초기화
+  transformControls.size = 1;
+  transformControls.space = "world";
 
-      // Save file to local storage
-      const reader = new FileReader();
-      reader.onload = function (e) {
-        let fileBuffer = new Uint8Array(e.target.result);
-        let result = occt.ReadStepFile(fileBuffer, null);
-        console.log(result);
-        localStorage.setItem(fileName, JSON.stringify(result));
-      };
-      reader.readAsArrayBuffer(fileList[i]);
+  // 현재 선택된 객체 초기화
+  currentTransform = null;
+
+  // OrbitControls 다시 활성화
+  controls.enabled = true;
+
+  console.log("TransformControls has been fully reset");
+}
+
+function createGeometryFromMesh(resultMesh) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(resultMesh.attributes.position.array, 3)
+  );
+  if (resultMesh.attributes.normal) {
+    geometry.setAttribute(
+      "normal",
+      new THREE.Float32BufferAttribute(resultMesh.attributes.normal.array, 3)
+    );
+  }
+  if (resultMesh.attributes.uv) {
+    geometry.setAttribute(
+      "uv",
+      new THREE.Float32BufferAttribute(resultMesh.attributes.uv.array, 2)
+    );
+  }
+  if (resultMesh.index) {
+    geometry.setIndex(
+      new THREE.Uint32BufferAttribute(resultMesh.index.array, 1)
+    );
+  }
+  geometry.clearGroups();
+  resultMesh.brep_faces.forEach((brepFace) => {
+    geometry.addGroup(
+      brepFace.first * 3,
+      (brepFace.last - brepFace.first + 1) * 3,
+      0
+    );
+  });
+  return geometry;
+}
+
+function createPartFromGeometry(geometry, name) {
+  const part = new THREE.Group();
+  part.userData.name = name || `Part-${partId++}`;
+
+  const geometries = separateGroups(geometry);
+  geometries.forEach((geo) => {
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff * Math.random(),
+      roughness: 0.5,
+      metalness: 0.1,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.userData.faceId = faceId++;
+    part.add(mesh);
+  });
+
+  return part;
+}
+
+function removeModelFromStorage(fileName, listItem) {
+  objectList.removeChild(listItem);
+  localStorage.removeItem(fileName);
+  const existingNames = JSON.parse(localStorage.getItem("fileNames")) || {};
+  delete existingNames[fileName];
+  localStorage.setItem("fileNames", JSON.stringify(existingNames));
+
+  const index = addedObjects.findIndex((obj) => obj.name === fileName);
+  if (index > -1) {
+    addedObjects.splice(index, 1);
+  }
+  updateObjectList();
+}
+
+function removeModelFromScene(objectName) {
+  const objectToRemove = scene.getObjectByName(objectName);
+  if (objectToRemove) {
+    scene.remove(objectToRemove);
+
+    // Remove from addedObjects array
+    const index = addedObjects.findIndex((obj) => obj.name === objectName);
+    if (index > -1) {
+      addedObjects.splice(index, 1);
     }
 
-    localStorage.setItem("fileNames", JSON.stringify(existingNames));
-  });
+    // Update the object list
+    updateObjectList();
+  }
+}
 
 // 객체 리스트를 업데이트하는 함수
 function updateObjectList() {
@@ -411,49 +442,49 @@ function updateObjectList() {
     listItem.textContent = object.name;
 
     // Create select button
-    const selectButton = document.createElement("button");
-    selectButton.textContent = "Select";
-    selectButton.addEventListener("click", function () {
-      console.log(`Selected: ${object.name}`);
-    });
+    // const selectButton = document.createElement("button");
+    // selectButton.textContent = "Select";
+    // selectButton.addEventListener("click", function () {
+    //   console.log(`Selected: ${object.name}`);
+    // });
 
     // Create remove button
     const removeButton = document.createElement("button");
     removeButton.textContent = "Remove";
     removeButton.addEventListener("click", function () {
-      console.log(`Removed: ${object.name}`);
-      // updateObjectList(); // 객체 리스트 업데이트
+      console.log(`Removing: ${object.name}`);
+      removeModelFromScene(object.name);
     });
 
-    listItem.appendChild(selectButton); // select 버튼 추가
+    // listItem.appendChild(selectButton); // select 버튼 추가
     listItem.appendChild(removeButton); // remove 버튼 추가
     objectListElement.appendChild(listItem);
 
     // Add child names to the list
-    object.mesh.children.forEach((child) => {
-      const childItem = document.createElement("li");
-      childItem.style.paddingLeft = "20px"; // Indentation for child items
-      childItem.textContent = child.userData.name; // Assuming child has userData.name
+    // object.mesh.children.forEach((child) => {
+    //   const childItem = document.createElement("li");
+    //   childItem.style.paddingLeft = "20px"; // Indentation for child items
+    //   childItem.textContent = child.userData.name; // Assuming child has userData.name
 
-      // Create select button for child
-      const childSelectButton = document.createElement("button");
-      childSelectButton.textContent = "Select";
-      childSelectButton.addEventListener("click", function () {
-        console.log(`Selected child: ${child.userData.name}`);
-      });
+    //   // Create select button for child
+    //   const childSelectButton = document.createElement("button");
+    //   childSelectButton.textContent = "Select";
+    //   childSelectButton.addEventListener("click", function () {
+    //     console.log(`Selected child: ${child.userData.name}`);
+    //   });
 
-      // Create remove button for child
-      const childRemoveButton = document.createElement("button");
-      childRemoveButton.textContent = "Remove";
-      childRemoveButton.addEventListener("click", function () {
-        console.log(`Removed child: ${child.userData.name}`);
-        // Logic to remove child from the scene can be added here
-      });
+    //   // Create remove button for child
+    //   const childRemoveButton = document.createElement("button");
+    //   childRemoveButton.textContent = "Remove";
+    //   childRemoveButton.addEventListener("click", function () {
+    //     console.log(`Removed child: ${child.userData.name}`);
+    //     // Logic to remove child from the scene can be added here
+    //   });
 
-      childItem.appendChild(childSelectButton); // select 버튼 추가
-      childItem.appendChild(childRemoveButton); // remove 버튼 추가
-      objectListElement.appendChild(childItem);
-    });
+    //   childItem.appendChild(childSelectButton); // select 버튼 추가
+    //   childItem.appendChild(childRemoveButton); // remove 버튼 추가
+    //   objectListElement.appendChild(childItem);
+    // });
   });
 }
 
@@ -461,7 +492,23 @@ function updateObjectList() {
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-canvas.addEventListener("click", (event) => {
+canvas.addEventListener("mousedown", (event) => {
+  isMouseDown = true;
+  mouseDownTime = Date.now();
+});
+
+canvas.addEventListener("mouseup", (event) => {
+  const mouseUpTime = Date.now();
+  const clickDuration = mouseUpTime - mouseDownTime;
+
+  if (clickDuration < dragThreshold) {
+    handleClick(event);
+  }
+
+  isMouseDown = false;
+});
+
+function handleClick(event) {
   // Calculate mouse position in normalized device coordinates (-1 to +1)
   const rect = canvas.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / canvas.clientWidth) * 2 - 1;
@@ -474,35 +521,98 @@ canvas.addEventListener("click", (event) => {
   // Calculate objects intersecting the picking ray
   const intersects = raycaster.intersectObjects(scene.children, true);
 
-  if (intersects.length > 0) {
-    const intersectedObject = intersects[0].object;
-    console.log("Intersected object:", intersectedObject);
+  let validIntersection = null;
+
+  // 유효한 첫 번째 교차점 찾기
+  for (const intersect of intersects) {
+    if (!ignoredTypes.includes(intersect.object.type)) {
+      validIntersection = intersect;
+      break;
+    }
+  }
+
+  if (validIntersection?.object.userData?.isCornerSphere) {
+    resetTransformControls();
+    const corner = validIntersection.object;
+    const rootObject = corner.parent.parent;
+    if (currentTransform === null) {
+      currentTransform = new THREE.Object3D();
+      currentTransform.position.copy(rootObject.position);
+      currentTransform.quaternion.copy(rootObject.quaternion);
+      console.log(
+        "Initial currentTransform position set:",
+        currentTransform.position
+      );
+    }
+
+    // 코너 스피어의 월드 위치 계산
+    const cornerWorldPosition = new THREE.Vector3();
+    corner.getWorldPosition(cornerWorldPosition);
+
+    // 이동 벡터 계산
+    const moveVector = new THREE.Vector3().subVectors(
+      cornerWorldPosition,
+      rootObject.position
+    );
+    moveVector.applyQuaternion(rootObject.quaternion.invert());
+
+    // rootObject의 위치 업데이트
+    rootObject.position.copy(cornerWorldPosition);
+
+    // modelParts의 위치 조정
+    corner.parent.position.sub(moveVector);
+
+    rootObject.quaternion.copy(currentTransform.quaternion);
+    // currentTransform 위치 업데이트
+    currentTransform.position.copy(rootObject.position);
+
+    console.log("Updated positions:");
+    console.log("Root object:", rootObject.position);
+    console.log("Model parts:", corner.parent.position);
+    console.log("Current transform:", currentTransform.position);
+
+    setupTransformControls(rootObject);
+  } else if (validIntersection) {
+    const intersectedObject = validIntersection.object;
+    if (intersectedObject.material && intersectedObject.material.emissive) {
+      if (selectedObjects.includes(intersectedObject)) {
+        // 이미 선택된 객체라면 선택 해제
+        const index = selectedObjects.indexOf(intersectedObject);
+        selectedObjects.splice(index, 1);
+        intersectedObject.material.emissive.setHex(0xffa500);
+      } else {
+        // 새로 선택된 객체라면 추가
+        selectedObjects.push(intersectedObject);
+        intersectedObject.currentHex =
+          intersectedObject.material.emissive.getHex();
+        intersectedObject.material.emissive.setHex(0xff0000); // 빨간색
+      }
+    }
 
     if (
       intersectedObject.userData &&
       intersectedObject.userData.faceId !== undefined
     ) {
+      console.log("FaceID:", intersectedObject.userData.faceId);
+
       let selectedObject = intersectedObject;
       while (selectedObject.parent.type !== "Scene")
         selectedObject = selectedObject.parent;
       initializeBrush(selectedObject);
-
-      // useGroup =true
-      // initializeBrush(intersectedObject);
-
-      console.log("FaceID:", intersectedObject.userData.faceId);
     } else {
       console.log("FaceID not found in userData");
     }
-    // console.log(intersectedObject.parent);
-    intersectedObject.material.emissive.setHex(0xff0000);
-    setTimeout(() => {
-      intersectedObject.material.emissive.setHex(0x000000);
-    }, 200);
   } else {
+    currentTransform = null;
     console.log("No intersection detected");
+    resetTransformControls();
+    selectedObjects.forEach((obj) => {
+      obj.material.emissive.setHex(0x000000);
+    });
+    selectedObjects = [];
   }
-});
+  onMouseMove(event);
+}
 
 function separateGroups(bufGeom) {
   let outGeometries = [];
@@ -560,15 +670,15 @@ function separateGroups(bufGeom) {
 
 // For Debug
 // Create a circular pointer element
-const pointer = document.createElement("div");
-pointer.style.position = "absolute";
-pointer.style.width = "20px";
-pointer.style.height = "20px";
-pointer.style.borderRadius = "50%";
-pointer.style.backgroundColor = "rgba(255, 0, 0, 0.5)";
-pointer.style.pointerEvents = "none";
-pointer.style.transform = "translate(-50%, -50%)"; // Center the pointer
-document.body.appendChild(pointer);
+// const pointer = document.createElement("div");
+// pointer.style.position = "absolute";
+// pointer.style.width = "20px";
+// pointer.style.height = "20px";
+// pointer.style.borderRadius = "50%";
+// pointer.style.backgroundColor = "rgba(255, 0, 0, 0.5)";
+// pointer.style.pointerEvents = "none";
+// pointer.style.transform = "translate(-50%, -50%)"; // Center the pointer
+// document.body.appendChild(pointer);
 
 // Update pointer position on mouse move
 window.addEventListener("mousemove", (event) => {
@@ -585,6 +695,54 @@ canvas.addEventListener("mouseleave", () => {
 canvas.addEventListener("mouseenter", () => {
   pointer.style.display = "block";
 });
+
+// 마우스 이벤트 리스너 추가
+canvas.addEventListener("mousemove", onMouseMove);
+
+function onMouseMove(event) {
+  // 마우스 위치를 정규화된 장치 좌표로 변환 (-1 to +1)
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / canvas.clientWidth) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / canvas.clientHeight) * 2 + 1;
+
+  // Raycaster 업데이트
+  raycaster.setFromCamera(mouse, camera);
+
+  // 씬의 모든 오브젝트에 대해 교차 검사
+  const intersects = raycaster.intersectObjects(scene.children, true);
+
+  let validIntersection = null;
+
+  // 유효한 첫 번째 교차점 찾기
+  for (const intersect of intersects) {
+    if (!ignoredTypes.includes(intersect.object.type)) {
+      validIntersection = intersect;
+      break;
+    }
+  }
+
+  // 이전에 하이라이트된 오브젝트가 있고 선택된 객체가 아니라면 원래 색상으로 복원
+  if (
+    lastHighlightedObject &&
+    !selectedObjects.includes(lastHighlightedObject)
+  ) {
+    lastHighlightedObject.material.emissive.setHex(0x000000);
+    lastHighlightedObject = null;
+  }
+
+  // 유효한 교차점이 있고 선택된 객체가 아니면 색상 변경
+  if (validIntersection) {
+    const intersectedObject = validIntersection.object;
+    if (
+      intersectedObject.material &&
+      intersectedObject.material.emissive &&
+      !selectedObjects.includes(intersectedObject)
+    ) {
+      lastHighlightedObject = intersectedObject;
+      lastHighlightedObject.material.emissive.setHex(0xffa500); // 주황색
+    }
+  }
+}
 
 const sidebar = document.getElementById("sidebar");
 // Create buttons for selecting brushes
@@ -603,12 +761,12 @@ buttonA.addEventListener("click", function () {
     // Prevent selecting A if B is selecting
     isSelectingA = !isSelectingA; // Toggle selection flag
     buttonA.textContent = isSelectingA
-      ? "Select Brush A (Selecting...)"
+      ? "Cancel selecting Brush A"
       : "Select Brush A"; // Update text
   }
   if (!isSelectedB) {
     buttonB.textContent = isSelectingB
-      ? "Select Brush B (Selecting...)"
+      ? "Cancel selecting Brush B"
       : "Select Brush B"; // Update text
   }
 });
@@ -620,12 +778,12 @@ buttonB.addEventListener("click", function () {
     // Prevent selecting B if A is selecting
     isSelectingB = !isSelectingB; // Toggle selection flag
     buttonB.textContent = isSelectingB
-      ? "Select Brush B (Selecting...)"
+      ? "Cancel selecting Brush B"
       : "Select Brush B"; // Update text
   }
   if (!isSelectedA) {
     buttonA.textContent = isSelectingA
-      ? "Select Brush A (Selecting...)"
+      ? "Cancel selecting Brush A"
       : "Select Brush A"; // Update text
   }
 });
@@ -637,17 +795,71 @@ sidebar.appendChild(csgButton);
 
 csgButton.addEventListener("click", function () {
   if (brushA && brushB) {
-    // brushA.updateMatrixWorld();
-    // brushB.updateMatrixWorld();
-    // console.log(brushB);
     console.log(brushA);
     console.log(brushB);
     const evaluator = new Evaluator();
     evaluator.useGroups = false;
     const result = evaluator.evaluate(brushA, brushB, SUBTRACTION); // Perform CSG operation
-    console.log(result);
-    result.position.setY(1000);
-    scene.add(result); // Add the result to the scene
+
+    // Create a root object to hold everything
+    const rootObject = new THREE.Object3D();
+    rootObject.name = "CSG Result";
+
+    // Set up the result mesh
+    result.geometry.deleteAttribute("uv");
+    result.material = new THREE.MeshStandardMaterial({
+      color: 0xffffff * Math.random(),
+      roughness: 0.5,
+      metalness: 0.1,
+      opacity: 0.7,
+      side: THREE.DoubleSide,
+    });
+
+    // Add edges to the result
+    const edges = new THREE.EdgesGeometry(result.geometry);
+    const line = new THREE.LineSegments(
+      edges,
+      new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        opacity: 0.4,
+      })
+    );
+    result.add(line);
+
+    // Compute bounding box for the result
+    result.geometry.computeBoundingBox();
+    const boundingBox = new THREE.Box3().setFromObject(result);
+
+    // Create bounding box helper
+    const boundingBoxHelper = new THREE.Box3Helper(boundingBox, 0xa0a0a0);
+
+    // Add corner spheres
+    const corners = getCorners(boundingBox);
+    const cornerSpheres = corners.map((corner) => createCornerSphere(corner));
+
+    // Add result, bounding box helper, and corner spheres to the root object
+    rootObject.add(result, boundingBoxHelper, ...cornerSpheres);
+
+    // Position the root object at the minimum point of the bounding box
+    rootObject.position.copy(boundingBox.min);
+
+    // Adjust positions of child objects relative to the root
+    const offset = new THREE.Vector3().subVectors(
+      new THREE.Vector3(),
+      boundingBox.min
+    );
+    result.position.add(offset);
+    boundingBoxHelper.position.add(offset);
+    cornerSpheres.forEach((sphere) => sphere.position.add(offset));
+
+    // Add the root object to the scene
+    scene.add(rootObject);
+    rootObject.position.setX(boundingBox.max.x * 2);
+
+    // Update the list of added objects
+    addedObjects.push({ name: "CSG Result", mesh: rootObject });
+    updateObjectList();
+
     console.log("CSG operation performed:", result);
   } else {
     console.log("BrushA or BrushB is not set.");
@@ -659,48 +871,151 @@ function initializeBrush(mesh) {
   console.log(mesh);
   if (!isSelectingA && !isSelectingB) return;
 
-  const brush = new Brush(mesh.userData.geometry[0]); // Create a Brush from the mesh geometry
+  const geometry = mergeGeometries(mesh);
+  const brush = new Brush(geometry); // Create a Brush from the mesh geometry
   brush.updateMatrixWorld();
 
   if (isSelectingA) {
     console.log("Check A");
     brushA = brush; // Set brushA to the current object
     isSelectingA = false; // Reset the flag
-    buttonA.textContent = mesh.userData.name; // Reset button text
+    buttonA.textContent = "Reselect Brush A"; // Reset button text
     isSelectedA = true;
   } else if (isSelectingB) {
     console.log("Check B");
     brushB = brush; // Set brushB to the current object
     isSelectingB = false; // Reset the flag
-    buttonB.textContent = mesh.userData.name; // Reset button text
+    buttonB.textContent = "Reselect Brush B"; // Reset button text
     isSelectedB = true;
   }
 }
-// function groupToMesh(group, material) {
-//   const geometries = [];
+function mergeGeometries(object) {
+  const geometries = [];
+  const materialIndices = [];
+  let vertexOffset = 0;
 
-//   // Traverse through the group and collect geometries
-//   group.traverse((child) => {
-//     if (child.isMesh) {
-//       geometries.push(child.geometry);
-//     }
-//   });
+  // Use iterative approach instead of recursive
+  const stack = [object];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (
+      current.isMesh &&
+      !(current.geometry instanceof THREE.SphereGeometry) &&
+      !(current instanceof THREE.BoxHelper)
+    ) {
+      const geometry = current.geometry;
+      const positionAttribute = geometry.getAttribute("position");
 
-//   // Merge geometries into one
-//   const mergedGeometry = THREE.BufferGeometryUtils.mergeBufferGeometries(
-//     geometries,
-//     false
-//   );
+      // Clone the geometry to avoid modifying the original
+      const clonedGeometry = geometry.clone();
 
-//   // Create a new mesh with the merged geometry
-//   const mesh = new THREE.Mesh(mergedGeometry, material);
+      // Apply the child's matrix to the geometry
+      clonedGeometry.applyMatrix4(current.matrixWorld);
 
-//   return mesh;
-// }
+      // Add dummy UV if it doesn't exist
+      if (!clonedGeometry.attributes.uv) {
+        const positions = clonedGeometry.attributes.position.array;
+        const uvs = new Float32Array((positions.length / 3) * 2);
+        for (let i = 0; i < uvs.length; i += 2) {
+          uvs[i] = uvs[i + 1] = 0;
+        }
+        clonedGeometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+      }
 
-// // Usage example
-// const group = new THREE.Group();
-// // Add meshes to the group
-// const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
-// const newMesh = groupToMesh(group, material);
-// scene.add(newMesh);
+      geometries.push(clonedGeometry);
+
+      // Store material index for each vertex
+      const index = current.material.uuid;
+      const count = positionAttribute.count;
+      for (let i = 0; i < count; i++) {
+        materialIndices.push(index);
+      }
+
+      vertexOffset += count;
+    }
+    if (current.children) {
+      stack.push(...current.children);
+    }
+  }
+
+  if (geometries.length === 0) {
+    console.warn("No valid geometries found to merge.");
+    return null;
+  }
+
+  // Merge all geometries
+  const mergedGeometry = new THREE.BufferGeometry();
+  const attributes = {};
+  let indexCount = 0;
+
+  // Pre-calculate total counts
+  for (const geometry of geometries) {
+    for (const name in geometry.attributes) {
+      if (!attributes[name]) {
+        attributes[name] = {
+          array: [],
+          itemSize: geometry.attributes[name].itemSize,
+        };
+      }
+      attributes[name].array.push(geometry.attributes[name].array);
+    }
+    indexCount += geometry.index
+      ? geometry.index.count
+      : geometry.attributes.position.count;
+  }
+
+  // Merge attributes
+  for (const name in attributes) {
+    const mergedArray = mergeTypedArrays(attributes[name].array);
+    mergedGeometry.setAttribute(
+      name,
+      new THREE.BufferAttribute(mergedArray, attributes[name].itemSize)
+    );
+  }
+
+  // Merge indices
+  if (indexCount > 0) {
+    const mergedIndex = new Uint32Array(indexCount);
+    let indexOffset = 0;
+    let vertexOffset = 0;
+
+    for (const geometry of geometries) {
+      const index = geometry.index;
+      const positionAttribute = geometry.attributes.position;
+
+      if (index) {
+        for (let i = 0; i < index.count; i++) {
+          mergedIndex[indexOffset++] = vertexOffset + index.getX(i);
+        }
+      } else {
+        for (let i = 0; i < positionAttribute.count; i++) {
+          mergedIndex[indexOffset++] = vertexOffset + i;
+        }
+      }
+
+      vertexOffset += positionAttribute.count;
+    }
+
+    mergedGeometry.setIndex(new THREE.BufferAttribute(mergedIndex, 1));
+  }
+
+  // Add material indices as a custom attribute
+  mergedGeometry.setAttribute(
+    "materialIndex",
+    new THREE.Float32BufferAttribute(materialIndices, 1)
+  );
+
+  return mergedGeometry;
+}
+
+// Helper function to merge typed arrays
+function mergeTypedArrays(arrays) {
+  const totalLength = arrays.reduce((sum, arr) => sum + arr.length, 0);
+  const result = new arrays[0].constructor(totalLength);
+  let offset = 0;
+  for (const arr of arrays) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
+}
