@@ -10,31 +10,43 @@
     <link type="text/css" rel="stylesheet" href="main.css" />
     <style>
       body {
+        margin: 0;
+        padding: 0;
         background-color: #f0f0f0;
         color: #444;
         display: flex;
+        height: 100vh;
+        overflow: hidden;
       }
       a {
         color: #08f;
       }
-      section#sidebar {
-        width: 20%;
+      #sidebar {
+        width: 400px;
+        min-width: 300px;
         padding: 10px;
         background-color: white;
         border-right: 1px solid #ccc;
         overflow-y: auto;
+        box-sizing: border-box;
       }
-      section#main {
-        flex-grow: 1; /* Changed width to flex-grow for better responsiveness */
+      #main {
+        flex-grow: 1;
         display: flex;
         justify-content: center;
         align-items: center;
+        position: relative;
       }
-      canvas {
+      #canvas {
         background-color: gray;
         display: block;
         width: 100%;
         height: 100%;
+      }
+      #gizmo {
+        position: absolute;
+        bottom: 10px;
+        right: 10px;
       }
     </style>
     <script
@@ -44,16 +56,16 @@
   </head>
   <body>
     <section id="sidebar">
-      <h3>File Upload</h3>
+      <h3>STEP Files</h3>
       <input type="file" id="fileInput" accept=".stp,.step,.glb,.gltf" />
-      <button id="clear"></button>
+      <button id="clear">Clear</button>
       <ul id="objectList"></ul>
       <h3>Scene Objects</h3>
       <ul id="sceneObjectList"></ul>
     </section>
     <section id="main">
-      <div id="gizmo"></div>
       <canvas id="canvas"></canvas>
+      <div id="gizmo"></div>
     </section>
     <script type="module" src="index.js"></script>
   </body>
