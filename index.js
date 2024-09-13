@@ -1,18 +1,18 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
-// import GUI from "lil-gui";
 import { TransformControls } from "three/examples/jsm/Addons.js";
 import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
 
+// Global variables for scene, camera, renderer, and other utilities
 let camera, scene, renderer;
 let faceId = 0;
 let partId = 1;
 
-/// Define brushA and brushB
+// Variables for brush selection and object management
 let brushA, brushB;
-let isSelectingA = false; // Flag for brushA selection
-let isSelectingB = false; // Flag for brushB selection
+let isSelectingA = false;
+let isSelectingB = false;
 let isSelectedA = false;
 let isSelectedB = false;
 
@@ -28,9 +28,10 @@ const ignoredTypes = [
 
 let isMouseDown = false;
 let mouseDownTime = 0;
-const dragThreshold = 200; // 드래그로 간주할 시간 임계값 (밀리초)
+const dragThreshold = 200; // Time threshold to consider as drag (in milliseconds)
 let currentTransform = null;
 
+// Set up clear button functionality
 const clearButton = document.getElementById("clear");
 clearButton.textContent = "Clear";
 clearButton.addEventListener("click", function () {
@@ -50,31 +51,30 @@ window.addEventListener("load", function () {
   }
 });
 
-// Canvas
+// Set up the 3D scene
 const canvas = document.getElementById("canvas");
 scene = new THREE.Scene();
-const ambientLight = new THREE.AmbientLight(0x808040); // soft white light
+
+// Add lighting to the scene
+const ambientLight = new THREE.AmbientLight(0x808040);
 scene.add(ambientLight);
 const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
 directionalLight.position.setY(1000);
 scene.add(directionalLight);
 
-// camera = new THREE.PerspectiveCamera(
-//   75,
-//   canvas.clientWidth / canvas.clientHeight,
-//   0.1,
-//   10000
-// );
+// Set up orthographic camera
 camera = new THREE.OrthographicCamera(
   canvas.clientWidth / -2,
-  canvas.clientWidth / 2, // left, right
+  canvas.clientWidth / 2,
   canvas.clientHeight / 2,
-  canvas.clientHeight / -2, // top, bottom
+  canvas.clientHeight / -2,
   0.1,
   10000
 );
 camera.position.set(500, 1500, 500);
 camera.lookAt(0, 0, 0);
+
+// Set up renderer
 renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: true,
@@ -84,59 +84,47 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.autoClear = false;
 renderer.setSize(canvas.clientWidth, canvas.clientHeight);
 
-/**
- * Debug
- */
-// const gui = new GUI();
-
-// Add OrbitControls
+// Add OrbitControls for camera manipulation
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+controls.enableDamping = true;
 controls.dampingFactor = 0.25;
 controls.screenSpacePanning = false;
 controls.maxPolarAngle = Math.PI / 2;
 
-// Add a grid plane
+// Add grid and axis helpers
 const gridHelper = new THREE.GridHelper(2000, 20, 0x333333, 0x222222);
 scene.add(gridHelper);
-
-// Add a axis helper
 const axesHelper = new THREE.AxesHelper(1000);
 scene.add(axesHelper);
 
-// clock
+// Set up clock for animations
 const clock = new THREE.Clock();
 
+// Set up TransformControls for object manipulation
 const transformControls = new TransformControls(camera, renderer.domElement);
 
+// Event listener for transform control modes
 window.addEventListener("keydown", function (event) {
-  console.log(event.key);
   switch (event.key) {
-    case "r": // R 키로 회전 모드 설정
+    case "r":
       transformControls.setMode("rotate");
-      console.log("TransformControls mode set to rotate");
       break;
-    case "t": // T 키로 이동 모드 설정
+    case "t":
       transformControls.setMode("translate");
-      console.log("TransformControls mode set to translate");
       break;
-    case "s": // S 키로 스케일 모드 설정
+    case "s":
       transformControls.setMode("scale");
-      console.log("TransformControls mode set to scale");
-      break;
-    default:
       break;
   }
 });
-/**
- * Gizmo
- */
-// helper
+
+// Set up ViewHelper for orientation gizmo
 const clientRect = canvas.getClientRects()[0];
 const helper = new ViewHelper(camera, renderer.domElement);
 helper.controls = controls;
 helper.controls.center = controls.target;
 
+// Position the orientation gizmo
 const helperSize = 128;
 const gizmo = document.getElementById("gizmo");
 gizmo.style.position = "absolute";
@@ -152,11 +140,11 @@ gizmo.style.borderRadius = "50%";
 
 helper.setLabels("X", "Y", "Z");
 document.body.appendChild(gizmo);
-console.log(helper);
 gizmo.addEventListener("pointerup", (event) => {
   helper.handleClick(event);
 });
 
+// Animation loop
 function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
@@ -168,16 +156,18 @@ function animate() {
 
 animate();
 
-// local storage
+// Load OCCT module
 const occt = await occtimportjs();
 
-const objectList = document.getElementById("objectList"); // Move this declaration outside
-const addedObjects = []; // 추가된 객체를 저장할 배열
+// Set up UI elements
+const objectList = document.getElementById("objectList");
+const addedObjects = [];
 
 document
   .getElementById("fileInput")
   .addEventListener("change", handleFileInput);
 
+// Function to handle file input
 function handleFileInput(event) {
   const fileList = event.target.files;
   const existingNames = JSON.parse(localStorage.getItem("fileNames")) || {};
@@ -189,6 +179,7 @@ function handleFileInput(event) {
   localStorage.setItem("fileNames", JSON.stringify(existingNames));
 }
 
+// Function to process uploaded files
 function processFile(file, existingNames) {
   let fileName = getUniqueFileName(file.name, existingNames);
   const listItem = createListItem(fileName);
@@ -203,6 +194,7 @@ function processFile(file, existingNames) {
   reader.readAsArrayBuffer(file);
 }
 
+// Function to ensure unique file names
 function getUniqueFileName(originalName, existingNames) {
   if (existingNames[originalName]) {
     let count = existingNames[originalName];
@@ -214,6 +206,7 @@ function getUniqueFileName(originalName, existingNames) {
   }
 }
 
+// Function to create list items for uploaded files
 function createListItem(fileName) {
   const listItem = document.createElement("li");
   listItem.textContent = fileName;
@@ -228,12 +221,15 @@ function createListItem(fileName) {
   return listItem;
 }
 
+// Helper function to create buttons
 function createButton(text, onClick) {
   const button = document.createElement("button");
   button.textContent = text;
   button.addEventListener("click", onClick);
   return button;
 }
+
+// Function to add a model to the 3D scene
 function addModelToScene(fileName) {
   const resultString = localStorage.getItem(fileName);
   const result = JSON.parse(resultString);
@@ -254,12 +250,11 @@ function addModelToScene(fileName) {
     parts.add(part);
   });
 
-  // Create bounding box for the entire model
+  // Create bounding box and corner spheres
   const boundingBox = new THREE.Box3().setFromObject(parts);
   const boundingBoxHelper = new THREE.Box3Helper(boundingBox, 0xa0a0a0);
   parts.add(boundingBoxHelper);
 
-  // Add spheres at all 8 corners of the bounding box
   const corners = getCorners(boundingBox);
   corners.forEach((corner) => {
     const cornerSphere = createCornerSphere(corner);
@@ -267,11 +262,12 @@ function addModelToScene(fileName) {
     cornerSpheres.push(cornerSphere);
   });
   rootObject.position.sub(corners[0]);
-  // Adjust position so the pivot is at the origin
+
   addedObjects.push({ name: fileName, mesh: rootObject });
   updateObjectList();
 }
 
+// Function to get corners of a bounding box
 function getCorners(boundingBox) {
   return [
     new THREE.Vector3(boundingBox.min.x, boundingBox.min.y, boundingBox.min.z),
@@ -285,6 +281,7 @@ function getCorners(boundingBox) {
   ];
 }
 
+// Function to create a corner sphere
 function createCornerSphere(position) {
   const sphereGeometry = new THREE.SphereGeometry(2, 16, 16);
   const sphereMaterial = new THREE.MeshStandardMaterial({
@@ -294,9 +291,11 @@ function createCornerSphere(position) {
   });
   const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
   sphere.position.copy(position);
-  sphere.userData.isCornerSphere = true; // 태그 추가
+  sphere.userData.isCornerSphere = true;
   return sphere;
 }
+
+// Functions to enable/disable orbit controls
 function enableOrbitControls() {
   controls.enabled = true;
 }
@@ -304,6 +303,7 @@ function disableOrbitControls() {
   controls.enabled = false;
 }
 
+// Function to set up transform controls for an object
 function setupTransformControls(object) {
   transformControls.attach(object);
   scene.add(transformControls);
@@ -315,40 +315,34 @@ function setupTransformControls(object) {
   transformControls.setTranslationSnap(10);
 }
 
+// Function to reset transform controls
 function resetTransformControls() {
-  // TransformControls에서 객체 분리
   if (transformControls.object) {
     transformControls.detach();
   }
 
-  // 이벤트 리스너 제거
   transformControls.removeEventListener("mouseDown", disableOrbitControls);
   transformControls.removeEventListener("mouseUp", enableOrbitControls);
 
-  // TransformControls를 씬에서 제거
   scene.remove(transformControls);
 
-  // 스냅 설정 초기화
   transformControls.setRotationSnap(null);
   transformControls.setTranslationSnap(null);
   transformControls.setScaleSnap(null);
 
-  // 모드 초기화
   transformControls.setMode("translate");
 
-  // 크기 및 공간 초기화
   transformControls.size = 1;
   transformControls.space = "world";
 
-  // 현재 선택된 객체 초기화
   currentTransform = null;
 
-  // OrbitControls 다시 활성화
   controls.enabled = true;
 
   console.log("TransformControls has been fully reset");
 }
 
+// Function to create geometry from mesh data
 function createGeometryFromMesh(resultMesh) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
@@ -383,6 +377,7 @@ function createGeometryFromMesh(resultMesh) {
   return geometry;
 }
 
+// Function to create a part from geometry
 function createPartFromGeometry(geometry, name) {
   const part = new THREE.Group();
   part.userData.name = name || `Part-${partId++}`;
@@ -403,6 +398,7 @@ function createPartFromGeometry(geometry, name) {
   return part;
 }
 
+// Function to remove a model from storage
 function removeModelFromStorage(fileName, listItem) {
   objectList.removeChild(listItem);
   localStorage.removeItem(fileName);
@@ -416,7 +412,7 @@ function removeModelFromStorage(fileName, listItem) {
   }
   updateObjectList();
 }
-
+// Function to remove a model from the scene
 function removeModelFromScene(objectName) {
   const objectToRemove = scene.getObjectByName(objectName);
   if (objectToRemove) {
@@ -433,20 +429,13 @@ function removeModelFromScene(objectName) {
   }
 }
 
-// 객체 리스트를 업데이트하는 함수
+// Function to update the object list in the UI
 function updateObjectList() {
   const objectListElement = document.getElementById("sceneObjectList");
-  objectListElement.innerHTML = ""; // 기존 리스트 초기화
+  objectListElement.innerHTML = ""; // Clear existing list
   addedObjects.forEach((object) => {
     const listItem = document.createElement("li");
     listItem.textContent = object.name;
-
-    // Create select button
-    // const selectButton = document.createElement("button");
-    // selectButton.textContent = "Select";
-    // selectButton.addEventListener("click", function () {
-    //   console.log(`Selected: ${object.name}`);
-    // });
 
     // Create remove button
     const removeButton = document.createElement("button");
@@ -456,42 +445,16 @@ function updateObjectList() {
       removeModelFromScene(object.name);
     });
 
-    // listItem.appendChild(selectButton); // select 버튼 추가
-    listItem.appendChild(removeButton); // remove 버튼 추가
+    listItem.appendChild(removeButton);
     objectListElement.appendChild(listItem);
-
-    // Add child names to the list
-    // object.mesh.children.forEach((child) => {
-    //   const childItem = document.createElement("li");
-    //   childItem.style.paddingLeft = "20px"; // Indentation for child items
-    //   childItem.textContent = child.userData.name; // Assuming child has userData.name
-
-    //   // Create select button for child
-    //   const childSelectButton = document.createElement("button");
-    //   childSelectButton.textContent = "Select";
-    //   childSelectButton.addEventListener("click", function () {
-    //     console.log(`Selected child: ${child.userData.name}`);
-    //   });
-
-    //   // Create remove button for child
-    //   const childRemoveButton = document.createElement("button");
-    //   childRemoveButton.textContent = "Remove";
-    //   childRemoveButton.addEventListener("click", function () {
-    //     console.log(`Removed child: ${child.userData.name}`);
-    //     // Logic to remove child from the scene can be added here
-    //   });
-
-    //   childItem.appendChild(childSelectButton); // select 버튼 추가
-    //   childItem.appendChild(childRemoveButton); // remove 버튼 추가
-    //   objectListElement.appendChild(childItem);
-    // });
   });
 }
 
-// Add this code after initializing the renderer
+// Set up raycaster for object selection
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
+// Event listeners for mouse interactions
 canvas.addEventListener("mousedown", (event) => {
   isMouseDown = true;
   mouseDownTime = Date.now();
@@ -508,22 +471,20 @@ canvas.addEventListener("mouseup", (event) => {
   isMouseDown = false;
 });
 
+// Function to handle click events
 function handleClick(event) {
-  // Calculate mouse position in normalized device coordinates (-1 to +1)
+  // Calculate mouse position in normalized device coordinates
   const rect = canvas.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / canvas.clientWidth) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / canvas.clientHeight) * 2 + 1;
-  console.log("Mouse position:", mouse);
 
-  // Update the raycaster with the camera and mouse position
+  // Update the raycaster and check for intersections
   raycaster.setFromCamera(mouse, camera);
-
-  // Calculate objects intersecting the picking ray
   const intersects = raycaster.intersectObjects(scene.children, true);
 
   let validIntersection = null;
 
-  // 유효한 첫 번째 교차점 찾기
+  // Find the first valid intersection
   for (const intersect of intersects) {
     if (!ignoredTypes.includes(intersect.object.type)) {
       validIntersection = intersect;
@@ -532,6 +493,7 @@ function handleClick(event) {
   }
 
   if (validIntersection?.object.userData?.isCornerSphere) {
+    // Handle corner sphere interaction
     resetTransformControls();
     const corner = validIntersection.object;
     const rootObject = corner.parent.parent;
@@ -539,53 +501,45 @@ function handleClick(event) {
       currentTransform = new THREE.Object3D();
       currentTransform.position.copy(rootObject.position);
       currentTransform.quaternion.copy(rootObject.quaternion);
-      console.log(
-        "Initial currentTransform position set:",
-        currentTransform.position
-      );
     }
 
-    // 코너 스피어의 월드 위치 계산
+    // Calculate world position of the corner sphere
     const cornerWorldPosition = new THREE.Vector3();
     corner.getWorldPosition(cornerWorldPosition);
 
-    // 이동 벡터 계산
+    // Calculate move vector
     const moveVector = new THREE.Vector3().subVectors(
       cornerWorldPosition,
       rootObject.position
     );
     moveVector.applyQuaternion(rootObject.quaternion.invert());
 
-    // rootObject의 위치 업데이트
+    // Update root object position
     rootObject.position.copy(cornerWorldPosition);
 
-    // modelParts의 위치 조정
+    // Adjust model parts position
     corner.parent.position.sub(moveVector);
 
     rootObject.quaternion.copy(currentTransform.quaternion);
-    // currentTransform 위치 업데이트
+    // Update currentTransform position
     currentTransform.position.copy(rootObject.position);
-
-    console.log("Updated positions:");
-    console.log("Root object:", rootObject.position);
-    console.log("Model parts:", corner.parent.position);
-    console.log("Current transform:", currentTransform.position);
 
     setupTransformControls(rootObject);
   } else if (validIntersection) {
+    // Handle object selection
     const intersectedObject = validIntersection.object;
     if (intersectedObject.material && intersectedObject.material.emissive) {
       if (selectedObjects.includes(intersectedObject)) {
-        // 이미 선택된 객체라면 선택 해제
+        // Deselect if already selected
         const index = selectedObjects.indexOf(intersectedObject);
         selectedObjects.splice(index, 1);
         intersectedObject.material.emissive.setHex(0xffa500);
       } else {
-        // 새로 선택된 객체라면 추가
+        // Select new object
         selectedObjects.push(intersectedObject);
         intersectedObject.currentHex =
           intersectedObject.material.emissive.getHex();
-        intersectedObject.material.emissive.setHex(0xff0000); // 빨간색
+        intersectedObject.material.emissive.setHex(0xff0000);
       }
     }
 
@@ -603,6 +557,7 @@ function handleClick(event) {
       console.log("FaceID not found in userData");
     }
   } else {
+    // Reset selection if no valid intersection
     currentTransform = null;
     console.log("No intersection detected");
     resetTransformControls();
@@ -614,6 +569,7 @@ function handleClick(event) {
   onMouseMove(event);
 }
 
+// Function to separate geometry groups
 function separateGroups(bufGeom) {
   let outGeometries = [];
   let groups = bufGeom.groups;
@@ -668,24 +624,15 @@ function separateGroups(bufGeom) {
   return outGeometries;
 }
 
-// For Debug
-// Create a circular pointer element
-// const pointer = document.createElement("div");
-// pointer.style.position = "absolute";
-// pointer.style.width = "20px";
-// pointer.style.height = "20px";
-// pointer.style.borderRadius = "50%";
-// pointer.style.backgroundColor = "rgba(255, 0, 0, 0.5)";
-// pointer.style.pointerEvents = "none";
-// pointer.style.transform = "translate(-50%, -50%)"; // Center the pointer
-// document.body.appendChild(pointer);
-
+// Event listener for window resize
 window.addEventListener("resize", onWindowResize, false);
+
+// Function to handle window resize
 function onWindowResize() {
   const width = Math.max(500, window.innerWidth - 400);
   const height = window.innerHeight;
 
-  // 카메라 업데이트
+  // Update camera
   if (camera instanceof THREE.OrthographicCamera) {
     const aspect = width / height;
     const frustumSize = 1000;
@@ -696,13 +643,14 @@ function onWindowResize() {
     camera.updateProjectionMatrix();
   }
 
-  // 렌더러 크기 업데이트
+  // Update renderer size
   renderer.setSize(width, height);
 
-  // ViewHelper 업데이트
+  // Update ViewHelper position
   updateViewHelperPosition();
 }
 
+// Function to update ViewHelper position
 function updateViewHelperPosition() {
   const helperSize = 128;
   const canvasRect = canvas.getBoundingClientRect();
@@ -710,40 +658,25 @@ function updateViewHelperPosition() {
   gizmo.style.left = `${canvasRect.right - helperSize}px`;
 }
 
-// Update pointer position on mouse move
-window.addEventListener("mousemove", (event) => {
-  pointer.style.left = `${event.clientX}px`;
-  pointer.style.top = `${event.clientY}px`;
-});
-
-// Hide pointer when mouse leaves canvas
-canvas.addEventListener("mouseleave", () => {
-  pointer.style.display = "none";
-});
-
-// Show pointer when mouse enters canvas
-canvas.addEventListener("mouseenter", () => {
-  pointer.style.display = "block";
-});
-
-// 마우스 이벤트 리스너 추가
+// Event listener for mouse movement
 canvas.addEventListener("mousemove", onMouseMove);
 
+// Function to handle mouse movement
 function onMouseMove(event) {
-  // 마우스 위치를 정규화된 장치 좌표로 변환 (-1 to +1)
+  // Calculate mouse position in normalized device coordinates
   const rect = canvas.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / canvas.clientWidth) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / canvas.clientHeight) * 2 + 1;
 
-  // Raycaster 업데이트
+  // Update raycaster
   raycaster.setFromCamera(mouse, camera);
 
-  // 씬의 모든 오브젝트에 대해 교차 검사
+  // Check for intersections
   const intersects = raycaster.intersectObjects(scene.children, true);
 
   let validIntersection = null;
 
-  // 유효한 첫 번째 교차점 찾기
+  // Find first valid intersection
   for (const intersect of intersects) {
     if (!ignoredTypes.includes(intersect.object.type)) {
       validIntersection = intersect;
@@ -751,7 +684,7 @@ function onMouseMove(event) {
     }
   }
 
-  // 이전에 하이라이트된 오브젝트가 있고 선택된 객체가 아니라면 원래 색상으로 복원
+  // Reset previously highlighted object
   if (
     lastHighlightedObject &&
     !selectedObjects.includes(lastHighlightedObject)
@@ -760,7 +693,7 @@ function onMouseMove(event) {
     lastHighlightedObject = null;
   }
 
-  // 유효한 교차점이 있고 선택된 객체가 아니면 색상 변경
+  // Highlight intersected object
   if (validIntersection) {
     const intersectedObject = validIntersection.object;
     if (
@@ -769,12 +702,14 @@ function onMouseMove(event) {
       !selectedObjects.includes(intersectedObject)
     ) {
       lastHighlightedObject = intersectedObject;
-      lastHighlightedObject.material.emissive.setHex(0xffa500); // 주황색
+      lastHighlightedObject.material.emissive.setHex(0xffa500); // Orange color
     }
   }
 }
 
+// Set up sidebar UI elements
 const sidebar = document.getElementById("sidebar");
+
 // Create buttons for selecting brushes
 const buttonA = document.createElement("button");
 buttonA.textContent = "Select Brush A";
@@ -788,16 +723,15 @@ sidebar.appendChild(buttonB);
 buttonA.addEventListener("click", function () {
   if (!isSelectingB) {
     isSelectedA = false;
-    // Prevent selecting A if B is selecting
     isSelectingA = !isSelectingA; // Toggle selection flag
     buttonA.textContent = isSelectingA
       ? "Cancel selecting Brush A"
-      : "Select Brush A"; // Update text
+      : "Select Brush A";
   }
   if (!isSelectedB) {
     buttonB.textContent = isSelectingB
       ? "Cancel selecting Brush B"
-      : "Select Brush B"; // Update text
+      : "Select Brush B";
   }
 });
 
@@ -805,16 +739,15 @@ buttonA.addEventListener("click", function () {
 buttonB.addEventListener("click", function () {
   if (!isSelectingA) {
     isSelectedB = false;
-    // Prevent selecting B if A is selecting
     isSelectingB = !isSelectingB; // Toggle selection flag
     buttonB.textContent = isSelectingB
       ? "Cancel selecting Brush B"
-      : "Select Brush B"; // Update text
+      : "Select Brush B";
   }
   if (!isSelectedA) {
     buttonA.textContent = isSelectingA
       ? "Cancel selecting Brush A"
-      : "Select Brush A"; // Update text
+      : "Select Brush A";
   }
 });
 
@@ -823,6 +756,7 @@ const csgButton = document.createElement("button");
 csgButton.textContent = "Perform CSG Operation";
 sidebar.appendChild(csgButton);
 
+// Event listener for CSG operation
 csgButton.addEventListener("click", function () {
   if (brushA && brushB) {
     console.log(brushA);
@@ -895,8 +829,7 @@ csgButton.addEventListener("click", function () {
     console.log("BrushA or BrushB is not set.");
   }
 });
-
-// Function to add objects to the scene and set brushes
+// Function to initialize a brush for CSG operations
 function initializeBrush(mesh) {
   console.log(mesh);
   if (!isSelectingA && !isSelectingB) return;
@@ -919,6 +852,8 @@ function initializeBrush(mesh) {
     isSelectedB = true;
   }
 }
+
+// Function to merge geometries of a complex object
 function mergeGeometries(object) {
   const geometries = [];
   const materialIndices = [];
