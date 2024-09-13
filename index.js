@@ -680,6 +680,36 @@ function separateGroups(bufGeom) {
 // pointer.style.transform = "translate(-50%, -50%)"; // Center the pointer
 // document.body.appendChild(pointer);
 
+window.addEventListener("resize", onWindowResize, false);
+function onWindowResize() {
+  const width = Math.max(500, window.innerWidth - 400);
+  const height = window.innerHeight;
+
+  // 카메라 업데이트
+  if (camera instanceof THREE.OrthographicCamera) {
+    const aspect = width / height;
+    const frustumSize = 1000;
+    camera.left = (frustumSize * aspect) / -2;
+    camera.right = (frustumSize * aspect) / 2;
+    camera.top = frustumSize / 2;
+    camera.bottom = frustumSize / -2;
+    camera.updateProjectionMatrix();
+  }
+
+  // 렌더러 크기 업데이트
+  renderer.setSize(width, height);
+
+  // ViewHelper 업데이트
+  updateViewHelperPosition();
+}
+
+function updateViewHelperPosition() {
+  const helperSize = 128;
+  const canvasRect = canvas.getBoundingClientRect();
+  gizmo.style.top = `${canvasRect.bottom - helperSize}px`;
+  gizmo.style.left = `${canvasRect.right - helperSize}px`;
+}
+
 // Update pointer position on mouse move
 window.addEventListener("mousemove", (event) => {
   pointer.style.left = `${event.clientX}px`;
